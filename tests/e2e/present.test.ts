@@ -13,6 +13,10 @@ import {
 import { makePdf } from '../support/pdf';
 import { makeZip } from '../support/zip';
 
+/** A 16x16 GIF of two frames: a red and a green disc on a transparent background. */
+const DISC_GIF =
+  'R0lGODlhEAAQAIEAAAAAANwoKAAAAAAAACH/C05FVFNDQVBFMi4wAwEAAAAh+QQJFAAAACwAAAAAEAAQAAAIOAABCBxIsKDBgwgFBlgYICEAhhAbGowYcSJFhgUvVhyoESLBjhg5gpQoUqNFkyc3IvTosKVLggEBACH5BAkUAAAALAIAAgAMAAwAgQAAACigPAAAAAAAAAgpAAEIBBCgYICBAw0qPChw4cKGDg0SjEixosWLBSdShLiR40OEGhkKDAgAOw==';
+
 // The static presenter page (spec/06_static_presenter, spec/07_participant_streaming) in
 // Chrome: it starts a session and shares a "screen" (a canvas stream standing in for the
 // picker, which automation cannot drive), a viewer joins through the site's viewer page over
@@ -258,6 +262,47 @@ describe('static presenter page', () => {
     });
     await expect.poll(() => presenter.locator('#toast').textContent()).toMatch(/too large/);
     expect(await pinned(presenter)).toBe(3);
+  });
+
+  it('animates a dropped GIF and draws a picture with transparent parts as a cutout', async () => {
+    const presenter = await presenterPage();
+    const link = await site.startBoard(presenter);
+    const viewer = await joinViewer(link);
+    await viewer.locator('#app').waitFor({ state: 'visible', timeout: 30000 });
+
+    // A 16x16 GIF of two frames, a red and a green disc on a transparent background.
+    await presenter.evaluate((b64) => {
+      const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const dt = new DataTransfer();
+      dt.items.add(new File([bytes], 'disc.gif', { type: 'image/gif' }));
+      document.getElementById('stage')!.dispatchEvent(
+        new DragEvent('drop', {
+          dataTransfer: dt,
+          bubbles: true,
+          cancelable: true,
+          clientX: 300,
+          clientY: 200,
+        }),
+      );
+    }, DISC_GIF);
+    const picture = (page: typeof viewer) =>
+      page.locator('collab-whiteboard .item.image-item image');
+    for (const page of [presenter, viewer]) {
+      // Drawn from the file itself once it is there, so it moves.
+      await expect
+        .poll(() => picture(page).getAttribute('href'), { timeout: 15000 })
+        .toMatch(/^blob:http/);
+      // A cutout: no white rectangle, a border that follows the disc.
+      expect(await picture(page).getAttribute('filter')).toMatch(/^url\(#wb-cut-/);
+      expect(await page.locator('collab-whiteboard .item.image-item .paper').count()).toBe(0);
+    }
+    const loaded = await picture(viewer).evaluate(async (node) => {
+      const img = new Image();
+      img.src = node.getAttribute('href')!;
+      await img.decode();
+      return [img.naturalWidth, img.naturalHeight];
+    });
+    expect(loaded).toEqual([16, 16]);
   });
 
   it('previews a PDF and an Office file with their content, and gives the link as a QR code', async () => {

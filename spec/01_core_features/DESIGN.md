@@ -190,7 +190,14 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   data: base64}` on `wb`, to everyone when the file is added and from the host to anyone who
   joins later. A receiver accepts them only for an existing image item with `file`, from the
   item's author or the host, and only with exactly `bytes` bytes; the name and type come from
-  the item, never the message, and the name loses path characters. Others get an invisible HTML
+  the item, never the message, and the name loses path characters. A file whose bytes start
+  like a GIF is drawn from a blob URL of the file instead of the preview, so an animated GIF
+  moves (up to the 5 MiB of a file, far more than the preview could hold); the preview, its
+  first frame, stays the fallback and is what PNG, SVG and the snapshot carry. A picture with
+  at least 0.1% clearly transparent pixels keeps them (a PNG preview) and is marked
+  `cutout: true`: it is drawn without the white rectangle, through an SVG filter that grows its
+  alpha into a white border with a thin edge, so the border and the shadow follow what shows,
+  like a cutout; the pin stays at the top middle of its box. Others get an invisible HTML
   box over each print (an SVG image cannot be dragged) whose `dragstart` puts the file on the
   drag as a `File` (pages and apps) and as `DownloadURL` (desktop and folders, Chromium);
   double click saves it. Your own prints are moved, not copied. The prints are drawn with a
