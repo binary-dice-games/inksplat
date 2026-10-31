@@ -63,8 +63,10 @@ export interface ImageItem extends ItemBase {
   ratio: number;
   /** The preview shown on the board. */
   data: string;
-  /** The file pinned with the preview, when it was small enough to send. */
+  /** The file pinned with the preview, when it was small enough to send. A GIF is drawn animated from it. */
   file?: FileInfo;
+  /** The picture has transparent parts: its border and shadow follow what shows. */
+  cutout?: true;
   rot?: number;
 }
 
@@ -211,6 +213,8 @@ export interface PreparedFile {
   /** The preview is a card (a file that is not a picture). */
   card?: boolean;
   name: string;
+  /** The picture has transparent parts (drawn as a cutout). */
+  cutout?: boolean;
   /** Absent when only the picture could be shared. */
   file?: FileInfo;
   blob: Blob | null;
@@ -240,13 +244,20 @@ export function cleanImageData(value: unknown, maxChars?: number): string | null
 
 /**
  * Reads an image file into a data URL small enough to send, scaling it down until it fits
- * (`square` crops the middle, for an avatar). Throws a WhiteboardError if it is not an image the
- * browser can read or stays too big.
+ * (`square` crops the middle, for an avatar; an animated GIF gives its first frame). `cutout` is
+ * set when the picture has transparent parts, which are kept (PNG). Throws a WhiteboardError if
+ * it is not an image the browser can read or stays too big.
  */
 export function fileToImageData(
   file: File,
   options?: { maxSide?: number; square?: boolean; maxChars?: number },
-): Promise<{ data: string; width: number; height: number }>;
+): Promise<{ data: string; width: number; height: number; cutout?: boolean }>;
+
+/** Whether RGBA pixels have see-through parts (at least 0.1% of them clearly transparent). */
+export function hasTransparency(rgba: ArrayLike<number>): boolean;
+
+/** Whether the bytes start like a GIF file. */
+export function isGif(bytes: ArrayLike<number>): boolean;
 
 /** Simplifies a flat polyline (Ramer-Douglas-Peucker) and rounds it to 0.1. */
 export function simplifyPoints(points: number[], tolerance?: number): number[];

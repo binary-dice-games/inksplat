@@ -11,7 +11,9 @@
  * host-side lock on viewers' changes), and later: numbered tools with options, moving, scaling
  * and turning one's own items, images dropped on the board, zoom (in `frameAdapter`), cursors
  * that show the tool and the avatar, a queue for the turn to speak, and files pinned on the
- * board (a preview on the board, the file itself sent to everyone to drag out as a copy).
+ * board (a preview on the board, the file itself sent to everyone to drag out as a copy). A GIF
+ * is drawn animated from its file once it is here, and a picture with transparent parts as a
+ * cutout (its border and shadow around what shows).
  * Elements are removed by selecting them and pressing Delete or Backspace (the right button does
  * nothing to them). The pointer tool has modes: the cursor, a laser that leaves a short trail and
  * emotes picked from a wheel that float away (`laser` and `emote` messages, never stored), and a
@@ -169,7 +171,7 @@ export function cleanItem(item) {
       return null;
     }
     const file = cleanFileInfo(item.file);
-    return { ...base, x: item.x, y: item.y, size: item.size, ratio: item.ratio, data: item.data, ...(file ? { file } : {}), ...turned(item.rot), ...attachedTo(item) };
+    return { ...base, x: item.x, y: item.y, size: item.size, ratio: item.ratio, data: item.data, ...(file ? { file } : {}), ...(item.cutout === true ? { cutout: true } : {}), ...turned(item.rot), ...attachedTo(item) };
   }
   if (item.kind === 'note') {
     if (!finite(item.x) || !finite(item.y) || !finite(item.size, 60, 600) || !finite(item.ratio, 0.3, 3) || typeof item.text !== 'string' || item.text.length > LIMITS.text || !COLOR.test(item.color ?? '')) {
@@ -245,10 +247,28 @@ export function cleanImageData(value, maxChars = LIMITS.imageChars) {
   return typeof value === 'string' && value.length <= maxChars && IMAGE_DATA.test(value) ? value : null;
 }
 
+/** Whether a picture has see-through parts: at least 0.1% of its pixels are clearly transparent. */
+export function hasTransparency(rgba) {
+  let clear = 0;
+  for (let i = 3; i < rgba.length; i += 4) {
+    if (rgba[i] < 250) {
+      clear += 1;
+    }
+  }
+  return clear > 0 && clear * 1000 >= rgba.length / 4;
+}
+
+/** Whether the bytes are those of a GIF file (the only kind drawn animated on the board). */
+export function isGif(bytes) {
+  return bytes.length >= 6 && bytes[0] === 0x47 && bytes[1] === 0x49 && bytes[2] === 0x46 && bytes[3] === 0x38 && (bytes[4] === 0x37 || bytes[4] === 0x39) && bytes[5] === 0x61;
+}
+
 /**
  * Reads an image file into a data URL small enough to travel in a message: scaled down until it
- * fits in `maxChars` (JPEG, or PNG for a PNG). `square` crops the middle (for an avatar).
- * @returns {Promise<{data: string, width: number, height: number}>}
+ * fits in `maxChars` (JPEG, or PNG for a PNG or a picture with transparent parts). `square` crops
+ * the middle (for an avatar). An animated GIF gives its first frame.
+ * @returns {Promise<{data: string, width: number, height: number, cutout?: boolean}>} `cutout`
+ *   when the picture has transparent parts (it is drawn as a cutout, its border around them)
  * @throws {WhiteboardError} when the file is not an image the browser can read, or stays too big
  */
 export async function fileToImageData(file, { maxSide = 800, square = false, maxChars = LIMITS.imageChars } = {}) {
@@ -262,7 +282,8 @@ export async function fileToImageData(file, { maxSide = 800, square = false, max
     throw new WhiteboardError('That image cannot be read.');
   }
   try {
-    const png = file.type === 'image/png';
+    let png = file.type === 'image/png';
+    let cutout = false;
     const crop = square ? Math.min(bitmap.width, bitmap.height) : 0;
     for (const k of [1, 0.75, 0.5, 0.35, 0.25]) {
       const long = Math.max(32, Math.round(maxSide * k));
@@ -272,18 +293,27 @@ export async function fileToImageData(file, { maxSide = 800, square = false, max
       canvas.width = w;
       canvas.height = h;
       const ctx = canvas.getContext('2d');
-      if (!png) {
-        ctx.fillStyle = '#ffffff';
-        ctx.fillRect(0, 0, w, h);
-      }
       if (square) {
         ctx.drawImage(bitmap, (bitmap.width - crop) / 2, (bitmap.height - crop) / 2, crop, crop, 0, 0, w, h);
       } else {
         ctx.drawImage(bitmap, 0, 0, w, h);
       }
+      if (k === 1) {
+        try {
+          cutout = hasTransparency(ctx.getImageData(0, 0, w, h).data);
+        } catch {
+          cutout = false; // the pixels cannot be read: drawn as an ordinary print
+        }
+        png ||= cutout;
+      }
+      if (!png) {
+        ctx.globalCompositeOperation = 'destination-over'; // JPEG has no transparency: on white
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+      }
       const data = canvas.toDataURL(png ? 'image/png' : 'image/jpeg', 0.82);
       if (cleanImageData(data, maxChars)) {
-        return { data, width: w, height: h };
+        return { data, width: w, height: h, ...(cutout ? { cutout: true } : {}) };
       }
     }
   } finally {
@@ -860,6 +890,34 @@ function pinMetrics(item, h) {
   return { pad, r, x: item.x, y: item.y - h / 2 - pad + r * 1.15, head: r / 2 };
 }
 
+/**
+ * The filter that draws a picture with transparent parts as a cutout: a white border `pad` wide
+ * around what shows, with a thin edge (class `cut-edge`, coloured when the picture is selected).
+ * Its region is the picture's box (x, y, w, h) grown by the border.
+ */
+function cutoutFilter(id, x, y, w, h, pad) {
+  const m = pad + 3;
+  const f = svgEl('filter', { id, filterUnits: 'userSpaceOnUse', x: x - m, y: y - m, width: w + 2 * m, height: h + 2 * m, 'color-interpolation-filters': 'sRGB' });
+  // Grows what shows, then rounds the steps that leaves off with a slight blur cut back to a sharp edge.
+  const grow = (radius, result) => {
+    const sharp = svgEl('feComponentTransfer', { result });
+    sharp.append(svgEl('feFuncA', { type: 'linear', slope: 3, intercept: -1 }));
+    return [svgEl('feMorphology', { in: 'SourceAlpha', operator: 'dilate', radius }), svgEl('feGaussianBlur', { stdDeviation: 1 }), sharp];
+  };
+  f.append(
+    ...grow(pad, 'grown'),
+    ...grow(pad + 0.75, 'outer'),
+    svgEl('feFlood', { class: 'cut-edge', 'flood-color': '#000000', 'flood-opacity': 0.25 }),
+    svgEl('feComposite', { in2: 'outer', operator: 'in', result: 'edge' }),
+    svgEl('feFlood', { 'flood-color': '#ffffff' }),
+    svgEl('feComposite', { in2: 'grown', operator: 'in', result: 'border' }),
+  );
+  const merge = svgEl('feMerge');
+  merge.append(svgEl('feMergeNode', { in: 'edge' }), svgEl('feMergeNode', { in: 'border' }), svgEl('feMergeNode', { in: 'SourceGraphic' }));
+  f.append(merge);
+  return f;
+}
+
 /** The drawn radius of a bare pin, and the radius of the invisible circle that catches the pointer over it (twice as large as the pin was). */
 const PIN_RADIUS = 2.5;
 const PIN_HIT = 9;
@@ -1294,8 +1352,10 @@ svg.board .note-item { cursor: default; }
 svg.board .arrow-item, svg.board .pin-item { cursor: pointer; }
 svg.board.arrow, svg.board.pin { cursor: crosshair; }
 .item.selected .paper { stroke: var(--wb-accent); stroke-width: 2.5; }
+.item.selected .cut-edge, .item.drop-target .cut-edge { flood-color: var(--wb-accent); flood-opacity: 1; }
 .ink-item.selected, .text-item.selected, .sticker-item.selected { filter: drop-shadow(0 0 2px var(--wb-accent)) drop-shadow(0 0 2px var(--wb-accent)); }
 .item.by-pin .paper { stroke: rgba(0,0,0,0.25); stroke-width: 0.75; }
+.item.by-pin .cut-edge { flood-color: #000000; flood-opacity: 0.25; }
 .item.drop-target .paper { stroke: var(--wb-accent); stroke-width: 2.5; stroke-dasharray: 7 4; }
 .sticker-item.drop-target use { outline: 2.5px dashed var(--wb-accent); outline-offset: 3px; }
 .pin-ring { stroke: var(--wb-accent, #3e63dd); stroke-width: 2.5; }
@@ -1464,6 +1524,7 @@ export class Whiteboard {
     this.copyText = options.copyText ?? copyToClipboard;
     this.openUrl = options.openUrl ?? ((url) => window.open(url, '_blank', 'noopener,noreferrer'));
     this.files = new Map(); // item id -> Blob of the file shared with the item
+    this.motion = new Map(); // item id -> {blob, url} of an animated GIF drawn from its file
     this.proxies = new Map(); // item id -> {el, img}: what a copy is dragged from
     if (getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
@@ -1606,12 +1667,12 @@ export class Whiteboard {
     }
     const p = await this.prepare(file, { room: LIMITS.filesTotal - this.fileTotal(), preview: this.filePreview });
     const size = p.card ? 170 : Math.max(40, Math.min(300, p.width));
-    const op = this.local(() => this.model.add({ kind: 'image', x: round1(at.x), y: round1(at.y), size, ratio: Math.round((p.height / p.width) * 10000) / 10000, data: p.data, ...(p.file ? { file: p.file } : {}), ...turned(this.tilt()) }));
+    const op = this.local(() => this.model.add({ kind: 'image', x: round1(at.x), y: round1(at.y), size, ratio: Math.round((p.height / p.width) * 10000) / 10000, data: p.data, ...(p.file ? { file: p.file } : {}), ...(p.cutout && !p.card ? { cutout: true } : {}), ...turned(this.tilt()) }));
     if (!op) {
       return null;
     }
     if (p.file && p.blob) {
-      this.files.set(op.item.id, p.blob);
+      this.keepFile(op.item.id, p.blob);
       this.sendFile(op.item.id, p.blob);
     } else {
       this.flash(`${p.name}: shared as a picture only (too big to send)`);
@@ -1997,6 +2058,7 @@ export class Whiteboard {
     const keep = [this.selected, this.editing];
     this.selected = null;
     this.editing = null;
+    this.stills = true; // a blob address means nothing outside this page
     try {
       for (const item of items) {
         const node = this.itemNode(item);
@@ -2007,6 +2069,7 @@ export class Whiteboard {
       }
     } finally {
       [this.selected, this.editing] = keep;
+      this.stills = false;
     }
     return new XMLSerializer().serializeToString(svg);
   }
@@ -2147,7 +2210,7 @@ export class Whiteboard {
       ops.push(op);
       if (blob) {
         files.push({ id: mine, blob });
-        this.files.set(mine, blob);
+        this.keepFile(mine, blob);
       }
     };
     const things = kept.filter((i) => i.kind !== 'arrow' && i.kind !== 'pin');
@@ -2219,6 +2282,7 @@ export class Whiteboard {
     }
     clearTimeout(this.hintTimer);
     this.clearFx();
+    this.dropMotion(true);
     this.host.remove();
     this.destroyed = true;
   }
@@ -2725,6 +2789,7 @@ export class Whiteboard {
         this.files.delete(id);
       }
     }
+    this.dropMotion();
     this.syncProxies();
     this.renderToolbar();
   }
@@ -2733,7 +2798,8 @@ export class Whiteboard {
   signature(item) {
     const st = (i) => (i ? `${i.stamp[0]}.${i.stamp[1]}` : '-');
     const pinned = (i) => (i?.kind === 'pin' && i.on ? `${st(i)}@${st(this.model.get(i.on))}` : st(i));
-    return `${pinned(item)}|${item.kind === 'arrow' ? `${pinned(this.model.get(item.from))}|${pinned(this.model.get(item.to))}` : ''}`;
+    const moving = item.kind === 'image' && this.motion.has(item.id) ? '|gif' : '';
+    return `${pinned(item)}|${item.kind === 'arrow' ? `${pinned(this.model.get(item.from))}|${pinned(this.model.get(item.to))}` : ''}${moving}`;
   }
 
   /** @private Threads of yours whose pin is gone, and pins of yours whose item is gone, are taken down (quietly: not an undo step). */
@@ -2868,7 +2934,10 @@ export class Whiteboard {
     }
   }
 
-  /** @private A print pinned on the board around `content`: border, pin, and a shadow that stays put when turned. */
+  /**
+   * @private A print pinned on the board around `content`: border, pin, and a shadow that stays put
+   * when turned. A null `paper` draws no border (the content brings its own, as a cutout does).
+   */
   printNode(item, h, turn, content, paper = '#ffffff', shape = 'square') {
     const { pad, r, y: py, head } = pinMetrics(item, h);
     const left = item.x - item.size / 2;
@@ -2878,10 +2947,10 @@ export class Whiteboard {
     if (item.lock) {
       content = [...content, lockBadge(left - pad + 8, top - pad + 4, item.lock)];
     }
-    print.append(
-      shapeElement(shape, left - pad, top - pad, item.size + 2 * pad, h + 2 * pad, { class: 'paper', fill: paper, stroke: 'rgba(0,0,0,0.25)', 'stroke-width': 0.75 }),
-      ...content,
-    );
+    if (paper !== null) {
+      print.append(shapeElement(shape, left - pad, top - pad, item.size + 2 * pad, h + 2 * pad, { class: 'paper', fill: paper, stroke: 'rgba(0,0,0,0.25)', 'stroke-width': 0.75 }));
+    }
+    print.append(...content);
     pin.append(
       svgEl('circle', { class: 'hit box', cx: item.x, cy: py, r, fill: 'transparent' }),
       svgEl('ellipse', { cx: item.x + head * 0.9, cy: py + head * 1.4, rx: head * 0.95, ry: head * 0.6, fill: 'rgba(0,0,0,0.3)' }),
@@ -2924,7 +2993,17 @@ export class Whiteboard {
       const grip = this.canEdit(item) ? [gripNode(item)] : [];
       const tip = svgEl('title');
       tip.textContent = `${item.file?.name ?? 'Picture'}: ${this.strings.dragFile}`;
-      g.append(this.printNode(item, h, turn, [svgEl('image', { href: item.data, x: left, y: top, width: item.size, height: h, preserveAspectRatio: 'none' }), ...grip, tip]));
+      const picture = svgEl('image', { href: this.pictureHref(item), x: left, y: top, width: item.size, height: h, preserveAspectRatio: 'none' });
+      if (item.cutout) {
+        // A cutout: the border and the shadow go around what shows, not around the rectangle.
+        const { pad } = pinMetrics(item, h);
+        const filter = cutoutFilter(`wb-cut-${item.id}`, left, top, item.size, h, pad);
+        picture.setAttribute('filter', `url(#${filter.id})`);
+        const hit = svgEl('rect', { class: 'hit box', x: left - pad, y: top - pad, width: item.size + 2 * pad, height: h + 2 * pad, fill: 'transparent' }); // grabbed anywhere, as a print
+        g.append(this.printNode(item, h, turn, [hit, filter, picture, ...grip, tip], null));
+      } else {
+        g.append(this.printNode(item, h, turn, [picture, ...grip, tip]));
+      }
     } else if (item.kind === 'pin') {
       const at = pinPoint(item, resolve);
       const shadow = svgEl('g', { filter: 'url(#wb-shadow)' });
@@ -3236,7 +3315,39 @@ export class Whiteboard {
     if (bytes.length !== item.file.bytes) {
       return;
     }
-    this.files.set(item.id, new Blob([bytes], { type: item.file.mime }));
+    this.keepFile(item.id, new Blob([bytes], { type: item.file.mime }), bytes);
+  }
+
+  /**
+   * @private Keeps the file of a picture item; a GIF is then drawn from it (animated) instead of
+   * its still preview. `bytes` the file's bytes when they are at hand.
+   */
+  keepFile(id, blob, bytes = null) {
+    this.files.set(id, blob);
+    const check = async () => {
+      const head = bytes ? bytes.subarray(0, 6) : await blobBytes(blob.slice(0, 6));
+      if (isGif(head) && this.files.get(id) === blob && !this.destroyed) {
+        this.motion.set(id, { blob, url: URL.createObjectURL(blob) });
+        this.render();
+      }
+    };
+    check().catch(() => {}); // unreadable: the still preview stays
+  }
+
+  /** @private The address an image item is drawn from: its animated file once here, else its preview. */
+  pictureHref(item) {
+    const m = this.stills ? null : this.motion.get(item.id);
+    return m && this.files.get(item.id) === m.blob ? m.url : item.data;
+  }
+
+  /** @private Lets go of the animated files no longer on the board (all of them with `all`). */
+  dropMotion(all = false) {
+    for (const [id, m] of this.motion) {
+      if (all || this.files.get(id) !== m.blob) {
+        URL.revokeObjectURL(m.url);
+        this.motion.delete(id);
+      }
+    }
   }
 
   /** @private The bytes of the files still on the board. */
