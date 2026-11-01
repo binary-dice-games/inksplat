@@ -381,6 +381,8 @@ export interface WhiteboardOptions {
   readOnly?: boolean;
   /** Show the buttons that choose the canvas; default true. */
   pages?: boolean;
+  /** Show a faint line under the canvases on how to use the tool in hand; default true. */
+  toolHints?: boolean;
   /** This person's avatar (an image data URL), shown on their cursor instead of their name. */
   avatar?: string;
   /** Show the speaking queue; default true. */
