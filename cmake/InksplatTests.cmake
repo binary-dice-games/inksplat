@@ -3,7 +3,8 @@
 #
 # Registers one Vitest file as its own ctest test (ctest runs every test in
 # its own process, in parallel). PROJECT is `unit` (default) or `e2e`.
-# TIMEOUT defaults to 120 seconds.
+# TIMEOUT defaults to 120 seconds, 300 for `e2e`: a browser file runs many
+# WebRTC sessions, and the macOS runner needs over two minutes for some.
 # Node is run directly so Windows does not go through npm.cmd.
 function(inksplat_add_test name file)
   cmake_parse_arguments(ARG "" "PROJECT;TIMEOUT" "LABELS" ${ARGN})
@@ -11,7 +12,11 @@ function(inksplat_add_test name file)
     set(ARG_PROJECT unit)
   endif()
   if(NOT ARG_TIMEOUT)
-    set(ARG_TIMEOUT 120)
+    if(ARG_PROJECT STREQUAL "e2e")
+      set(ARG_TIMEOUT 300)
+    else()
+      set(ARG_TIMEOUT 120)
+    endif()
   endif()
   add_test(
     NAME ${name}
