@@ -238,6 +238,10 @@ the stream (`reencodes`).
 - **Rate**: one encoder serves everybody, as for a guest's stream (4.4): capped by the
   settings, not adapted per viewer; a viewer that loses frames asks for a key frame (read from
   the downlink senders' PLI counters, as for a guest).
+- **Stall guard**: once ready with a track, the shared encoder must send a frame within 3 s
+  (a capture sends one when it starts, and the page repeats a still one); otherwise the host
+  drops it for the rest of the session and goes back to one encoder per link. A stalled shared
+  encoder would leave every viewer without video.
 - `sharedEncoder: false` (session option) keeps one encoder per link.
 
 ## 5. Protocol

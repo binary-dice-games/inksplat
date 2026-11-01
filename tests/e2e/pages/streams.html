@@ -14,14 +14,20 @@
   const color = q.get('color');
   const app = (window.app = { role, errors: [], logs: [], state: null });
 
-  /** A canvas of one colour, with a moving square so frames keep coming. */
-  function screen() {
+  /**
+   * A canvas of one colour, with a moving square so frames keep coming. `stalled`: it sends no
+   * frame until `app.go()`.
+   */
+  function screen(stalled = false) {
     const c = document.createElement('canvas');
     c.width = 320;
     c.height = 180;
     const g = c.getContext('2d');
     let n = 0;
+    let going = !stalled;
+    app.go = () => (going = true);
     setInterval(() => {
+      if (!going) return;
       g.fillStyle = color;
       g.fillRect(0, 0, 320, 180);
       g.fillStyle = '#fff';
@@ -78,7 +84,7 @@
   });
 
   if (role === 'host') {
-    app.stream = screen();
+    app.stream = screen(q.get('stalled') === '1');
     session.mediaParams({ fps: 10, maxBitrate: 400000 });
     session.setMedia(app.stream);
     /** Shows a guest's uplink here and asks it to send. */

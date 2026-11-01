@@ -793,12 +793,17 @@ class SharedEncoder {
    * @param {string} codec MIME type to encode in
    * @param {(frame: any) => void} onFrame each encoded frame (before it goes on)
    * @param {() => void} onReady called once frames can flow
+   * @param {() => void} onStall called when it has a track and is ready but no frame comes
+   *        within `STALL_MS`
    */
-  constructor(codec, onFrame, onReady) {
+  constructor(codec, onFrame, onReady, onStall) {
     this.codec = codec;
     this.ready = false;
     this.closed = false;
     this.track = null;
+    this.onStall = onStall;
+    this.frameAt = 0;
+    this.stallTimer = null;
     this.out = new RTCPeerConnection({ encodedInsertableStreams: true });
     this.in = new RTCPeerConnection({ encodedInsertableStreams: true });
     this.out.onicecandidate = (e) => e.candidate && this.in.addIceCandidate(e.candidate).catch(() => {});
@@ -814,6 +819,7 @@ class SharedEncoder {
     const { readable, writable } = this.sender.createEncodedStreams();
     const writer = writable.getWriter();
     pump(readable, (frame) => {
+      this.frameAt = performance.now();
       onFrame(frame);
       writer.write(frame).catch(() => {});
     });
@@ -825,6 +831,7 @@ class SharedEncoder {
       if (this.out.connectionState === 'connected' && !this.ready && !this.closed) {
         this.ready = true;
         onReady();
+        this.expectFrame();
       }
     });
     this.negotiate().catch((e) => dbg('shared encoder not started:', e?.message ?? e));
@@ -843,7 +850,25 @@ class SharedEncoder {
     if (track !== this.track) {
       this.track = track;
       this.sender.replaceTrack(track).catch(() => {});
+      this.expectFrame();
     }
+  }
+
+  /**
+   * @private Once ready with a track, a frame must come within `STALL_MS` (a capture sends one
+   * when it starts, and the page repeats a still one); otherwise `onStall`.
+   */
+  expectFrame() {
+    clearTimeout(this.stallTimer);
+    if (!this.ready || !this.track || this.closed) {
+      return;
+    }
+    const since = performance.now();
+    this.stallTimer = setTimeout(() => {
+      if (!this.closed && this.track && this.frameAt < since) {
+        this.onStall();
+      }
+    }, SharedEncoder.STALL_MS);
   }
 
   keyFrame() {
@@ -865,10 +890,14 @@ class SharedEncoder {
   close() {
     this.closed = true;
     this.ready = false;
+    clearTimeout(this.stallTimer);
     this.out.close();
     this.in.close();
   }
 }
+
+/** How long a ready shared encoder with a track may go without a frame before it is dropped. */
+SharedEncoder.STALL_MS = 3000;
 
 /**
  * The video of a session (spec/07_participant_streaming/DESIGN.md section 4). Every guest offer
@@ -1082,6 +1111,7 @@ class MediaController {
     if (actual && actual.toLowerCase() !== want) {
       rec.downCodec = actual;
       this.router.setOutputCodec(rec, actual);
+      rec.sender.replaceTrack(this.trackFor(rec)).catch(() => {});
       dbg('video downlink codec:', actual, '(the guest\'s first)');
     }
   }
@@ -1231,6 +1261,7 @@ class MediaController {
             dbg('shared encoder:', info?.codec, info?.implementation ?? '?', info?.powerEfficient ? '(hardware)' : '');
           }, 5000);
         },
+        () => this.dropShared('no frames'),
       );
       this.apply(this.shared.sender);
       dbg('shared encoder: starting in', codec);
@@ -1238,6 +1269,21 @@ class MediaController {
       dbg('shared encoder not started:', e?.message ?? e);
       this.shared = null;
     }
+  }
+
+  /**
+   * @private The shared encoder failed: back to one encoder per link for the rest of the
+   * session.
+   */
+  dropShared(why) {
+    dbg('shared encoder dropped:', why, '- one encoder per link');
+    this.shareEncoder = false;
+    clearTimeout(this.sharedInfoTimer);
+    this.shared?.close();
+    this.shared = null;
+    this.router?.reset();
+    this.retrack();
+    this.watchLoss();
   }
 
   /** Host: which encoder sends the host's own stream to the viewers, or null (one per link). */

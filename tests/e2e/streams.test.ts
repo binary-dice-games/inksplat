@@ -27,6 +27,7 @@ interface App {
   inbound(): Promise<string | null>;
   tracks: number;
   encodedBy(): Promise<Record<string, number>>;
+  go(): void;
 }
 
 let browser: Browser;
@@ -227,5 +228,32 @@ describe("guests' streams relayed by the host", () => {
     for (const p of all) {
       expect(await p.evaluate(() => (window as unknown as { app: App }).app.tracks)).toBe(1);
     }
+  });
+
+  it('drops the shared encoder when it sends nothing, and encodes per link', async () => {
+    const fcodecs = 'video/AV1,video/H264,video/VP8';
+    // The host's stream sends no frame at first: the shared encoder gets nothing to send.
+    const host = await open({
+      role: 'host',
+      id: 'host-0001',
+      color: '#0000ee',
+      fcodecs,
+      stalled: '1',
+    });
+    const token = await host.evaluate(() => (window as unknown as { app: App }).app.token);
+    const ana = await open({ role: 'guest', id: 'ana-0001', color: '#ee0000', token });
+    await joined(ana);
+    const logs = () => host.evaluate(() => (window as unknown as { app: App }).app.logs);
+    await expect
+      .poll(async () => (await logs()).some((l) => /shared encoder dropped/.test(l)), {
+        timeout: 10000,
+      })
+      .toBe(true);
+    await host.evaluate(() => (window as unknown as { app: App }).app.go());
+    await shows(ana, 'blue');
+    type Host = { app: { session: { encoderInfo(): Promise<unknown> } } };
+    expect(await host.evaluate(() => (window as unknown as Host).app.session.encoderInfo())).toBe(
+      null,
+    );
   });
 });
