@@ -2,10 +2,12 @@
 /**
  * @file Screen capture for the presenter page (spec/06_static_presenter): the
  * browser's own picker (a tab, a window or a whole screen) as the video source.
- * The track goes straight to the session's senders: there is no canvas relay,
- * because timers of a background page are throttled and this page usually sits
- * behind the window it shares.
+ * The track goes to the session's senders through the still refresh
+ * (`still-refresh.ts`, a worker that repeats a still frame so the encoder can
+ * sharpen it), not a canvas relay: timers of a background page are throttled and
+ * this page usually sits behind the window it shares.
  */
+import { refreshStill } from './still-refresh';
 
 /** What kind of surface the user picked (`displaySurface` of the track settings). */
 export type Surface = 'browser' | 'window' | 'monitor' | 'unknown';
@@ -14,7 +16,10 @@ export type Surface = 'browser' | 'window' | 'monitor' | 'unknown';
 export type CursorMode = 'always' | 'motion' | 'never';
 
 export interface DisplayCapture {
-  /** The captured surface, to hand to `ShareHost.setSource`. */
+  /**
+   * The captured surface, to hand to `ShareHost.setSource`; where the browser can, its frame
+   * is repeated for a while once the surface is still (`still-refresh.ts`).
+   */
   readonly stream: MediaStream;
   readonly surface: Surface;
   /** The captured frame size now (it changes when the shared window is resized). */
@@ -90,8 +95,9 @@ export async function startDisplayCapture(cursor?: CursorMode): Promise<DisplayC
   }
   const ended = new Set<() => void>();
   track.addEventListener('ended', () => ended.forEach((cb) => cb()), { once: true });
+  const refresh = refreshStill(track);
   return {
-    stream,
+    stream: refresh ? new MediaStream([refresh.track]) : stream,
     surface: surfaceOf(track),
     size() {
       const { width, height } = track.getSettings();
@@ -101,6 +107,7 @@ export async function startDisplayCapture(cursor?: CursorMode): Promise<DisplayC
       ended.add(cb);
     },
     stop() {
+      refresh?.stop();
       stream.getTracks().forEach((t) => t.stop());
     },
   };

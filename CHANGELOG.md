@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- A shared screen sharpens once it stops changing (in Chrome): text no longer stays blurry after scrolling or switching pages, especially on 4K screens.
 - Zooming, panning and the magnifier no longer slow down badly on large (4K) screens, notably over the wall, cork and whiteboard backgrounds.
 - Zooming over many notes, pictures, pins and threads is much faster: their shadows are sharp-edged now instead of blurred. The faint square around pins stuck on notes is gone.
 - The magnifier's lens is clipped round: a square of the enlarged screen no longer shows around it.

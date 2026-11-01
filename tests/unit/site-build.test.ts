@@ -53,10 +53,10 @@ describe('the Pages site', () => {
     expect(readFileSync(join(out, '.nojekyll'), 'utf8')).toBe('');
   });
 
-  it('ships the presenter page, also under the protocol major, with small bundles', () => {
+  it('ships the presenter page and its worker, also under the protocol major, with small bundles', () => {
     for (const dir of ['', `v${protocolMajor()}/`]) {
       expect(readFileSync(join(out, dir, 'present.html'), 'utf8')).toContain('present.js');
-      for (const bundle of ['viewer.js', 'present.js']) {
+      for (const bundle of ['viewer.js', 'present.js', 'still-refresh-worker.js']) {
         const code = readFileSync(join(out, dir, bundle));
         expect(gzipSync(code).length, `${dir}${bundle}`).toBeLessThan(150 * 1024);
       }

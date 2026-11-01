@@ -72,10 +72,17 @@ Notes:
 
 - `contentHint = 'detail'` and `degradationPreference =
   'maintain-resolution'` keep text legible at low fps.
-- A static page produces almost no frames; Chrome may stop delivering. The
-  offscreen doc forces a keyframe-bearing refresh at least every 2 s so late
-  joiners and recovering links get a picture (`requestFrame` via a canvas
-  `captureStream(0)` relay if needed).
+- A static page produces almost no frames: `getDisplayMedia` delivers a frame only when the
+  surface changes. The encoder spends the first frame after a change at a low quality (the
+  bits went to the motion) and, with nothing after it, never sharpens it: text stayed blurry
+  for good (measured at 3840x1822, VP8 or AV1 at 1.5 Mbit/s: one frame at QP 80 to 100, then
+  none). The **still refresh** (`viewer/src/still-refresh.ts`) repeats the last frame every
+  333 ms for 12 s after each change, between the capture and the senders
+  (`MediaStreamTrackProcessor` -> worker -> `MediaStreamTrackGenerator`); VP8 then reaches
+  QP 15 in about 6 s. The loop runs in a worker because the sharing page usually sits behind
+  the shared window, where its timers are throttled. Firefox and Safari send the capture as
+  it is. (The extension's canvas relay used to repeat frames, which is why
+  `spikes/video-quality/` measured refinement over 10 s.)
 - **Sharpness (measured, `spikes/video-quality/`):** the viewer's text must not be resized
   or smeared. On a 1920×1080 text scene, error on the text pixels against the original
   (0 is perfect; mean grey-level difference):

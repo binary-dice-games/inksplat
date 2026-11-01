@@ -54,7 +54,8 @@ function protocol() {
 
 /**
  * Builds the viewer page and the presenter page (`index.html`, `viewer.js`,
- * `present.html`, `present.js`) with their images (`ASSET_FILES`).
+ * `present.html`, `present.js`, the worker `still-refresh-worker.js`) with their
+ * images (`ASSET_FILES`).
  * @param {string} out directory to write into
  */
 export async function buildViewer(out) {
@@ -63,6 +64,8 @@ export async function buildViewer(out) {
     entryPoints: [
       { in: join(src, 'main.ts'), out: 'viewer' },
       { in: join(src, 'present.ts'), out: 'present' },
+      // The still refresh's worker (viewer/src/still-refresh.ts), loaded next to the pages.
+      { in: join(src, 'still-refresh-worker.ts'), out: 'still-refresh-worker' },
     ],
     outdir: out,
     bundle: true,

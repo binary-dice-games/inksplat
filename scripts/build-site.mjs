@@ -61,6 +61,10 @@ export async function buildSite(out, { base = '/', archive = join(root, 'site-ar
   // Its presenter page goes with it: both sides of a link then speak the same protocol.
   copyFileSync(join(out, 'present.html'), join(out, versionDir, 'present.html'));
   copyFileSync(join(out, 'present.js'), join(out, versionDir, 'present.js'));
+  copyFileSync(
+    join(out, 'still-refresh-worker.js'),
+    join(out, versionDir, 'still-refresh-worker.js'),
+  );
   for (const name of [...PDF_FILES.map(([, n]) => n), ...ASSET_FILES]) {
     copyFileSync(join(out, name), join(out, versionDir, name));
   }
