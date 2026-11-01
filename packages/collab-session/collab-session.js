@@ -9,7 +9,9 @@
  * video (`setMedia`, `mediaParams`, the `track` event; see
  * spec/01_core_features/DESIGN.md section 4.1), and streams of guests: the uplink
  * transceiver, `setUplink`, `uplinkParams`, `uplink`, `setRelay`, `FrameRouter` and the
- * `up`/`key` control messages (spec/07_participant_streaming/DESIGN.md sections 4 and 6).
+ * `up`/`key` control messages (spec/07_participant_streaming/DESIGN.md sections 4 and 6), and
+ * the forwarded codec chosen per link (`forwardCodecs`, `sdpCodecs`; a viewer on another codec
+ * gets the source re-encoded); a guest announces only the video of the link it keeps (`adopt`).
  * It imports nothing.
  *
  *   import { createSession } from './collab-session.js';
@@ -492,6 +494,8 @@ export class FrameRouter {
    * @param {{
    *   requestKeyFrame: (source: string) => void,
    *   copy: (frame: any, rtpTimestamp: number) => any,
+   *   codecOf?: (source: string) => string | undefined,
+   *   requestOutputKeyFrame?: (key: any) => void,
    *   retryMs?: number, maxTries?: number,
    *   setTimer?: (fn: () => void, ms: number) => any, clearTimer?: (t: any) => void,
    * }} options
@@ -499,13 +503,17 @@ export class FrameRouter {
   constructor(options) {
     this.requestKeyFrame = options.requestKeyFrame;
     this.copy = options.copy;
+    /** The codec a source sends (MIME type), or undefined when unknown. (inksplat addition) */
+    this.codecOf = options.codecOf ?? (() => undefined);
+    /** Asks an output's own encoder for a key frame. (inksplat addition) */
+    this.requestOutputKeyFrame = options.requestOutputKeyFrame ?? (() => {});
     this.retryMs = options.retryMs ?? 500;
     this.maxTries = options.maxTries ?? 20;
     this.setTimer = options.setTimer ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimer = options.clearTimer ?? ((t) => clearTimeout(t));
     /** The peer id whose frames are forwarded, or null. */
     this.source = null;
-    this.outputs = new Map(); // key -> {id, write, waiting, offset, last}
+    this.outputs = new Map(); // key -> {id, write, codec, waiting, offset, last}
     this.timer = null;
     this.again = false;
     this.tries = 0;
@@ -523,9 +531,14 @@ export class FrameRouter {
     this.want();
   }
 
-  /** An output (a viewer's sender): `id` is its peer id (null until known), `write(frame)`. */
-  addOutput(key, id, write) {
-    this.outputs.set(key, { id, write, waiting: true, offset: 0, last: undefined });
+  /**
+   * An output (a viewer's sender): `id` is its peer id (null until known), `write(frame)`, and
+   * `codec` the MIME type it sends (undefined: any). An output whose codec differs from the
+   * source's gets the frames of its own encoder instead (`own`), which the host feeds with the
+   * decoded source (`reencodes`).
+   */
+  addOutput(key, id, write, codec) {
+    this.outputs.set(key, { id, write, codec, waiting: true, offset: 0, last: undefined });
     if (id !== null) {
       this.want();
     }
@@ -545,6 +558,24 @@ export class FrameRouter {
     this.outputs.delete(key);
   }
 
+  /**
+   * Whether output `key` cannot take the source's frames as they are (their codecs differ), so
+   * its own encoder sends the decoded source. (inksplat addition)
+   */
+  reencodes(key) {
+    const out = this.outputs.get(key);
+    return out !== undefined && this.mismatch(out);
+  }
+
+  /** @private */
+  mismatch(out) {
+    if (this.source === null || out.codec === undefined) {
+      return false;
+    }
+    const codec = this.codecOf(this.source);
+    return codec !== undefined && codec.toLowerCase() !== out.codec.toLowerCase();
+  }
+
   /** Whether an output is waiting for a key frame of the source. */
   waiting() {
     return [...this.outputs.values()].some((o) => o.waiting && o.id !== null && o.id !== this.source);
@@ -556,16 +587,25 @@ export class FrameRouter {
       return;
     }
     for (const out of this.outputs.values()) {
-      if (out.id !== null && out.id !== from) {
+      if (out.id !== null && out.id !== from && !this.mismatch(out)) {
         this.deliver(out, frame);
       }
     }
   }
 
-  /** A frame of the output `key`'s own encoder: forwarded to it when `self` is the source. */
+  /**
+   * A frame of the output `key`'s own encoder: forwarded to it when `self` is the source, or
+   * when the output re-encodes the source (`reencodes`).
+   */
   own(key, self, frame) {
     const out = this.outputs.get(key);
-    if (out && out.id !== null && this.source !== null && this.source === self) {
+    if (
+      out &&
+      out.id !== null &&
+      this.source !== null &&
+      out.id !== this.source &&
+      (this.source === self || this.mismatch(out))
+    ) {
       this.deliver(out, frame);
     }
   }
@@ -617,6 +657,11 @@ export class FrameRouter {
       return;
     }
     this.requestKeyFrame(this.source);
+    for (const [key, out] of this.outputs) {
+      if (out.waiting && out.id !== null && this.mismatch(out)) {
+        this.requestOutputKeyFrame(key);
+      }
+    }
     this.timer = this.setTimer(() => {
       this.timer = null;
       const again = this.again || this.waiting();
@@ -640,6 +685,39 @@ function canForwardFrames() {
 
 /** Codecs without a picture of their own (retransmission, redundancy, error correction). */
 const AUX_CODEC = /^video\/(rtx|red|ulpfec|flexfec-03)$/i;
+
+/**
+ * The video codecs (MIME types, lower case) a session description lists for the media section
+ * `mid`, in its order. (inksplat addition)
+ */
+export function sdpCodecs(sdp, mid) {
+  for (const section of String(sdp ?? '').split(/\r?\n(?=m=)/)) {
+    const lines = section.split(/\r?\n/);
+    if (lines.includes(`a=mid:${mid}`)) {
+      return lines
+        .map((line) => /^a=rtpmap:\d+ ([^/\s]+)\//.exec(line)?.[1])
+        .filter(Boolean)
+        .map((name) => `video/${name.toLowerCase()}`);
+    }
+  }
+  return [];
+}
+
+/**
+ * The codec to forward on a transceiver: the first of `wanted` (MIME types) that the offer lists
+ * for it and this browser can (`kind` 'send' or 'receive'), or undefined. (inksplat addition)
+ */
+function pickForwardCodec(offered, wanted, kind) {
+  const Api = kind === 'send' ? globalThis.RTCRtpSender : globalThis.RTCRtpReceiver;
+  const caps = (Api?.getCapabilities?.('video')?.codecs ?? []).map((c) => c.mimeType.toLowerCase());
+  return wanted.find((m) => offered.includes(m.toLowerCase()) && caps.includes(m.toLowerCase()));
+}
+
+/** H.264 entries first that every decoder takes: packetization mode 1, constrained baseline. */
+function h264Rank(c) {
+  const f = c.sdpFmtpLine ?? '';
+  return (/packetization-mode=1/.test(f) ? 0 : 2) + (/profile-level-id=42e0/i.test(f) ? 0 : 1);
+}
 
 /** Reads every chunk of `readable` into `cb`, until it ends. */
 async function pump(readable, cb) {
@@ -704,6 +782,8 @@ class MediaController {
     this.relay = null;
     this.relaySet = false;
     this.encoded = false;
+    /** Codecs to forward, best first (MIME types); chosen per transceiver from the offer. */
+    this.forwardCodecs = ['video/VP8'];
     this.router = null;
     this.placeholderTrack = null;
     this.pliTimer = null;
@@ -713,6 +793,26 @@ class MediaController {
     this.uplinkStream = null;
     this.uplinkSenders = new Set();
     this.uplink = { active: false };
+    /** pc -> the video stream it receives; announced once the pc is the host link. */
+    this.streams = new Map();
+    this.adopted = null;
+  }
+
+  /** Guest: `pc` is now the link to the host: its video (if any yet) is announced. */
+  adopt(pc) {
+    if (this.role !== 'guest' || !pc || this.adopted === pc) {
+      return;
+    }
+    this.adopted = pc;
+    for (const other of [...this.streams.keys()]) {
+      if (other !== pc) {
+        this.streams.delete(other);
+      }
+    }
+    const stream = this.streams.get(pc);
+    if (stream) {
+      this.emit('track', stream);
+    }
   }
 
   /** Host: turns frame forwarding on where the browser can; called once, before any link. */
@@ -721,6 +821,8 @@ class MediaController {
     if (this.encoded) {
       this.router = new FrameRouter({
         requestKeyFrame: (source) => this.keyFrameOf(source),
+        codecOf: (source) => this.uplinkCodecOf(source),
+        requestOutputKeyFrame: (rec) => void forceKeyFrame(rec.sender),
         copy: (frame, rtpTimestamp) =>
           new RTCEncodedVideoFrame(frame, { metadata: { ...frame.getMetadata(), rtpTimestamp } }),
       });
@@ -741,9 +843,19 @@ class MediaController {
     }
     const transceiver = pc.addTransceiver('video', { direction: 'recvonly' });
     this.offerOrder(transceiver);
+    // A guest offers on several links and keeps the one the host welcomes: only that link's
+    // video is announced (`adopt`), or a closed link's track could replace the live one.
     pc.addEventListener('track', (e) => {
       if (e.track.kind === 'video' && e.transceiver === transceiver) {
-        this.emit('track', e.streams[0] ?? new MediaStream([e.track]));
+        this.streams.set(pc, e.streams[0] ?? new MediaStream([e.track]));
+        if (this.adopted === pc) {
+          this.emit('track', this.streams.get(pc));
+        }
+      }
+    });
+    pc.addEventListener('connectionstatechange', () => {
+      if (pc.connectionState === 'closed' || pc.connectionState === 'failed') {
+        this.streams.delete(pc);
       }
     });
     // The uplink: nothing is sent until the host asks (encodings inactive).
@@ -773,18 +885,26 @@ class MediaController {
       return;
     }
     down.direction = 'sendonly';
-    const rec = { pc, peerId: null, sender: down.sender, upTrack: null, pli: 0 };
+    const rec = { pc, peerId: null, sender: down.sender, upTrack: null, pli: 0, downCodec: undefined, upCodec: undefined };
     this.links.set(pc, rec);
-    this.codecs(down);
+    const offer = pc.remoteDescription?.sdp;
+    if (this.encoded) {
+      rec.downCodec = pickForwardCodec(sdpCodecs(offer, down.mid), this.forwardCodecs, 'send');
+    }
+    this.codecs(down, rec.downCodec);
     if (this.encoded) {
       const { readable, writable } = down.sender.createEncodedStreams();
       const writer = writable.getWriter();
-      this.router.addOutput(rec, null, (frame) => writer.write(frame).catch(() => {}));
+      this.router.addOutput(rec, null, (frame) => writer.write(frame).catch(() => {}), rec.downCodec);
       pump(readable, (frame) => this.router.own(rec, this.self, frame));
     }
     if (up) {
       up.direction = 'recvonly';
-      this.codecs(up);
+      if (this.encoded) {
+        rec.upCodec = pickForwardCodec(sdpCodecs(offer, up.mid), this.forwardCodecs, 'receive');
+      }
+      this.codecs(up, rec.upCodec);
+      dbg('video codecs of the link:', rec.downCodec ?? '?', 'down,', rec.upCodec ?? '?', 'up');
       rec.upTrack = up.receiver.track;
       if (this.encoded) {
         const { readable, writable } = up.receiver.createEncodedStreams();
@@ -834,6 +954,16 @@ class MediaController {
     return null;
   }
 
+  /** @private The codec guest `peerId` sends on its uplink, when forwarding. */
+  uplinkCodecOf(peerId) {
+    for (const rec of this.links.values()) {
+      if (rec.peerId === peerId) {
+        return rec.upCodec;
+      }
+    }
+    return undefined;
+  }
+
   /** @private The peer id whose video goes out: the host's own unless `setRelay` said other. */
   source() {
     return this.relaySet ? this.relay : this.self;
@@ -845,7 +975,12 @@ class MediaController {
     if (source !== null && source === this.self) {
       return this.track() ?? this.placeholder();
     }
-    if (this.encoded || source === null || source === rec.peerId) {
+    if (source === null || source === rec.peerId) {
+      return this.placeholder();
+    }
+    // Forwarding: the source's frames are written as they are, unless this link's codec
+    // differs; then this link's encoder takes the decoded source.
+    if (this.encoded && !this.router.reencodes(rec)) {
       return this.placeholder();
     }
     for (const other of this.links.values()) {
@@ -1064,18 +1199,24 @@ class MediaController {
   }
 
   /**
-   * @private Host: the codecs of a transceiver's answer. Forwarded frames decode only when every
-   * link uses one codec, so with forwarding the answer offers VP8 alone (with its helpers);
-   * otherwise the preferred codecs by MIME type (e.g. 'video/VP9') come first.
+   * @private Host: the codecs of a transceiver's answer. Forwarded frames decode only where the
+   * source's link and the viewer's link use one codec, so with forwarding the answer offers
+   * `forward` alone (with its helpers; chosen from `forwardCodecs` and the offer); otherwise the
+   * preferred codecs by MIME type (e.g. 'video/VP9') come first.
    */
-  codecs(transceiver) {
+  codecs(transceiver, forward) {
     if (typeof RTCRtpSender?.getCapabilities !== 'function') {
       return;
     }
     const all = RTCRtpSender.getCapabilities('video')?.codecs ?? [];
     let list;
     if (this.encoded) {
-      list = all.filter((c) => /^video\/vp8$/i.test(c.mimeType) || AUX_CODEC.test(c.mimeType));
+      if (!forward) {
+        return; // nothing wanted is offered: the browser's own order stays
+      }
+      list = all
+        .filter((c) => c.mimeType.toLowerCase() === forward.toLowerCase() || AUX_CODEC.test(c.mimeType))
+        .sort((a, b) => (AUX_CODEC.test(a.mimeType) ? 9 : h264Rank(a)) - (AUX_CODEC.test(b.mimeType) ? 9 : h264Rank(b)));
     } else {
       const wanted = this.params.codecs;
       if (!wanted?.length) {
@@ -1089,7 +1230,7 @@ class MediaController {
     }
     try {
       transceiver.setCodecPreferences(list);
-      dbg('video codec preference:', this.encoded ? 'video/VP8 (forwarding)' : this.params.codecs.join(', '));
+      dbg('video codec preference:', this.encoded ? `${forward} (forwarding)` : this.params.codecs.join(', '));
     } catch (e) {
       // unsupported: the browser's own order stays
       dbg('video codec preference not applied:', e?.message ?? e);
@@ -1642,6 +1783,9 @@ export class Session {
         this.sendControlTo(entry, m);
       }
     };
+    if (options.forwardCodecs?.length) {
+      this.media.forwardCodecs = [...options.forwardCodecs];
+    }
     this.media.enableForwarding(this.role === 'host' && options.forwardFrames !== false);
   }
 
@@ -2189,6 +2333,7 @@ export class Session {
       old.link.close();
     }
     this.links.set(m.host.id, entry);
+    this.media.adopt(entry.link.pc);
     // Other links still opening are not needed now.
     for (const other of [...this.unnamed]) {
       other.link.close();

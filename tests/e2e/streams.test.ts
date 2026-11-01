@@ -1,5 +1,5 @@
 // MIT License © 2026 Binary Dice Games
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Browser, BrowserContext, Page } from 'playwright-core';
 import type { Server } from 'node:http';
 import { FakeTracker } from '../support/fake-tracker';
@@ -24,6 +24,8 @@ interface App {
   ask(id: string, on: boolean): void;
   share(on: boolean): void;
   color(id?: string): string | null;
+  inbound(): Promise<string | null>;
+  tracks: number;
 }
 
 let browser: Browser;
@@ -39,8 +41,12 @@ beforeAll(async () => {
   ]);
 });
 
+// Each test's pages close when it ends: pages left open keep encoding and slow the next test.
+afterEach(async () => {
+  for (const c of contexts.splice(0)) await c.close();
+});
+
 afterAll(async () => {
-  for (const c of contexts) await c.close();
   await browser?.close();
   await tracker?.stop();
   files?.server.close();
@@ -148,5 +154,50 @@ describe("guests' streams relayed by the host", () => {
     await expect.poll(async () => (await uplink()).bytes, { timeout: 10000 }).toBeGreaterThan(0);
     await host.evaluate(() => (window as unknown as { app: App }).app.ask('ana-0001', false));
     await expect.poll(async () => (await uplink()).active).toBe(false);
+  });
+
+  it('forwards in the best codec each link has, and re-encodes for a viewer without it', async () => {
+    const fcodecs = 'video/AV1,video/H264,video/VP8';
+    const host = await open({ role: 'host', id: 'host-0001', color: '#0000ee', fcodecs });
+    const token = await host.evaluate(() => (window as unknown as { app: App }).app.token);
+    const guest = (id: string, color: string, extra: Record<string, string> = {}) =>
+      open({ role: 'guest', id, color, token, ...extra });
+    const [ana, bob, cy] = await Promise.all([
+      guest('ana-0001', '#ee0000'),
+      guest('bob-0001', '#00cc00', { noav1: '1' }),
+      guest('cy-00001', '#888888'),
+    ]);
+    await Promise.all([joined(ana), joined(bob), joined(cy)]);
+    await Promise.all([shows(ana, 'blue'), shows(bob, 'blue'), shows(cy, 'blue')]);
+    const inbound = (p: Page) =>
+      p.evaluate(() => (window as unknown as { app: App }).app.inbound());
+    expect(await inbound(cy)).toBe('video/AV1');
+    expect(await inbound(bob)).toBe('video/H264');
+
+    // Ana's AV1 stream: forwarded to Cy, decoded and encoded again in H.264 for Bob.
+    await ana.evaluate(() => (window as unknown as { app: App }).app.share(true));
+    const run = app(host);
+    await run(() => (window as unknown as { app: App }).app.ask('ana-0001', true));
+    await run(() => (window as unknown as { app: App }).app.session.setRelay('ana-0001'));
+    await Promise.all([shows(bob, 'red'), shows(cy, 'red')]);
+    expect(await inbound(bob)).toBe('video/H264');
+    expect(await inbound(cy)).toBe('video/AV1');
+
+    // Bob's turn (his uplink offers AV1: only his downlink lacks it).
+    await bob.evaluate(() => (window as unknown as { app: App }).app.share(true));
+    await run(() => (window as unknown as { app: App }).app.ask('bob-0001', true));
+    await run(() => (window as unknown as { app: App }).app.session.setRelay('bob-0001'));
+    await Promise.all([shows(ana, 'green'), shows(cy, 'green')]);
+
+    // Back to the host's own: everybody on their own encoder.
+    await run(() => (window as unknown as { app: App }).app.session.setRelay('host-0001'));
+    await Promise.all([shows(ana, 'blue'), shows(bob, 'blue'), shows(cy, 'blue')]);
+    for (const p of [host, ana, bob, cy]) {
+      expect(await p.evaluate(() => (window as unknown as { app: App }).app.errors)).toEqual([]);
+    }
+    // Only the link each guest kept announced its video (offers on other links may be answered).
+    for (const p of [ana, bob, cy]) {
+      expect(await p.evaluate(() => (window as unknown as { app: App }).app.tracks)).toBe(1);
+    }
   });
 });

@@ -111,7 +111,7 @@ host page does today for the host. Everybody else gets the relayed copy.
 ## 4. Architecture
 
 ```
- guest A (source) --uplink: encoded VP8--> HOST --downlink, same frames--> guest B, C, ...
+ guest A (source) --uplink: encoded AV1--> HOST --downlink, same frames--> guest B, C, ...
                                             |  (encoded transform: no decode, no jitter buffer)
                                             +--> decoder (only for the host's own view)
  guest D (offered, not asked) --uplink paused (encodings active:false)--> HOST
@@ -164,11 +164,17 @@ On the host (`MediaController` in `collab-session.js`, `FrameRouter` for the rou
 - **Sender side** of every downlink: while the host's own stream is the source its own encoder's
   frames pass (with the output's timestamp); otherwise its track is the placeholder and the
   forwarded frames are written instead; with no source nothing is written.
-- **One codec.** Forwarded frames decode only if every leg uses the same codec. With forwarding
-  the host answers both video transceivers of every link with **VP8 alone** (and its
-  retransmission and error-correction helpers), so the guests' codec order does not matter.
-  VP9 and AV1 were not tried (their dependency descriptors and scalability metadata would need
-  their own check); the host's own stream is VP8 too while forwarding is on.
+- **Codec per link.** Forwarded frames decode only where the source's uplink and the viewer's
+  downlink use the same codec. The host picks each transceiver's codec when it answers: the
+  first of `forwardCodecs` (inksplat: AV1, H.264, VP8; `packages/defaults` `FORWARD_CODECS`)
+  that the guest's offer lists and the host's browser can, and answers with that codec alone
+  (with its retransmission and error-correction helpers; for H.264 packetization mode 1 and
+  constrained baseline first). A downlink whose codec differs from the shown source's uplink
+  (say a Safari viewer without AV1 while a Chrome guest shares in AV1) **re-encodes**: its
+  sender takes the source's decoded track and the router passes that sender's own frames
+  (`FrameRouter.reencodes`), asking that sender for a key frame when it starts. Tried in Chrome
+  with AV1, H.264, VP9 and VP8 (`tests/e2e/streams.test.ts`): source switches and late joiners
+  decode, with no key frame requests. The host's own stream uses each link's codec.
 
 **Fallback** (no `createEncodedStreams`, `RTCEncodedVideoFrame` or `MediaStreamTrackGenerator`:
 Firefox and Safari as hosts, or `forwardFrames: false`): the host attaches the received track to
@@ -297,7 +303,7 @@ transceivers.
 - Picker: desktop Chrome, Edge, Firefox, Safari. Phones and tablets have no `getDisplayMedia`:
   the share button is hidden there (feature check, not user agent), they still watch and draw.
 - Forwarding needs Chrome's `createEncodedStreams()` (4.2) on the **host** only; sources and
-  viewers send and receive plain VP8 (or, with the fallback, any codec). A Firefox or Safari
+  viewers send and receive plain AV1, H.264 or VP8 (or, with the fallback, any codec). A Firefox or Safari
   host re-encodes. Whether their `RTCRtpScriptTransform` can forward between peer connections
   was not tested.
 - Background throttling: the relay is event driven (frames arrive, frames are written); no timers

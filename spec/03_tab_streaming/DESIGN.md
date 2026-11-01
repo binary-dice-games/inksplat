@@ -72,10 +72,17 @@ Notes:
 
 - `contentHint = 'detail'` and `degradationPreference =
   'maintain-resolution'` keep text legible at low fps.
-- A static page produces almost no frames; Chrome may stop delivering. The
-  offscreen doc forces a keyframe-bearing refresh at least every 2 s so late
-  joiners and recovering links get a picture (`requestFrame` via a canvas
-  `captureStream(0)` relay if needed).
+- A static page produces almost no frames: `getDisplayMedia` delivers a frame only when the
+  surface changes. The encoder spends the first frame after a change at a low quality (the
+  bits went to the motion) and, with nothing after it, never sharpens it: text stayed blurry
+  for good (measured at 3840x1822, VP8 or AV1 at 1.5 Mbit/s: one frame at QP 80 to 100, then
+  none). The **still refresh** (`viewer/src/still-refresh.ts`) repeats the last frame every
+  333 ms for 12 s after each change, between the capture and the senders
+  (`MediaStreamTrackProcessor` -> worker -> `MediaStreamTrackGenerator`); VP8 then reaches
+  QP 15 in about 6 s. The loop runs in a worker because the sharing page usually sits behind
+  the shared window, where its timers are throttled. Firefox and Safari send the capture as
+  it is. (The extension's canvas relay used to repeat frames, which is why
+  `spikes/video-quality/` measured refinement over 10 s.)
 - **Sharpness (measured, `spikes/video-quality/`):** the viewer's text must not be resized
   or smeared. On a 1920×1080 text scene, error on the text pixels against the original
   (0 is perfect; mean grey-level difference):
@@ -88,6 +95,13 @@ Notes:
     (starts soft, refines slowly), AV1 1.9 / 1.6, H.264 1.2 / 1.2 (constant);
     AV1 sends 130 KB where the others send 360 to 400 KB, and costs 4 ms per 1080p frame
     (13 ms at 4K), H.264 9 and 27 ms.
+  - re-measured 2026-11 (Chromium of Playwright 1.64, 3840x1822 text, 1500 kbps, frame
+    repeated while still): 1 s / 10 s still, moving: H.264 5.8 / 5.3, 10 (its software
+    encoder drops frames at 4K: 11 to 18 frames where the others encode 28 to 34), AV1
+    8.0 / 7.8, 8 (250 to 375 KB, the fewest), VP9 9.9 / 7.4, 13, VP8 11.6 / 7.9, 14. The
+    scene's 15 px text is legible in every codec once still (crops compared by eye); the
+    numbers differ in the anti-aliasing. At 4000 kbps H.264 reaches 3.5, the others do not
+    move. At 1080p AV1 measured 7.6 (it was 1.9 in the first run: the encoder changed).
   So: the capture is asked for device pixels (tab size times the display's pixel ratio,
   capped by the settings, never more because Chrome upscales to the limit), the relay
   never shrinks below the settings' maximum, and the codec order is AV1, H.264, VP9, VP8.

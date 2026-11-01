@@ -32,6 +32,7 @@ inksplat_add_test(share_button tests/unit/share-button.test.ts)
 inksplat_add_test(display_capture tests/unit/display-capture.test.ts)
 inksplat_add_test(present_settings tests/unit/present-settings.test.ts)
 inksplat_add_test(site_build tests/unit/site-build.test.ts)
+inksplat_add_test(still_refresh tests/unit/still-refresh.test.ts)
 
 # Browser tests need Chrome (INKSPLAT_CHROME), see docs/building.md.
 inksplat_add_test(webrtc tests/e2e/webrtc.test.ts PROJECT e2e)
@@ -41,3 +42,4 @@ inksplat_add_test(present tests/e2e/present.test.ts PROJECT e2e)
 inksplat_add_test(streams tests/e2e/streams.test.ts PROJECT e2e)
 inksplat_add_test(relay_spike tests/e2e/relay-spike.test.ts PROJECT e2e)
 inksplat_add_test(participant_streaming tests/e2e/participant-streaming.test.ts PROJECT e2e)
+inksplat_add_test(still_refresh_chrome tests/e2e/still-refresh.test.ts PROJECT e2e)

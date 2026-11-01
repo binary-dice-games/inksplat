@@ -60,11 +60,13 @@ export const DEFAULT_VIDEO: Readonly<VideoSettings> = {
 export const FPS_PRESETS: readonly number[] = [1, 3, 5, 10];
 
 /**
- * Codec preference, best first; the browser's own order follows. Measured on text at 1080p
- * (spikes/video-quality): AV1 and H.264 are sharp within a second of the page going still,
- * VP8 and VP9 start soft and refine over ten seconds; AV1 sends a third of the bytes of the
- * others and costs 4 ms a frame at 1080p. The viewer lists these first in its offer, because
- * the sender uses the first codec of the offer that it supports.
+ * Codec preference, best first; the browser's own order follows. Measured on text
+ * (spikes/video-quality, spec/03_tab_streaming/DESIGN.md section 4): once the page is still and
+ * its frame repeated (`viewer/src/still-refresh.ts`) every codec shows the text legibly; AV1 sends
+ * the fewest bytes and keeps the most detail while the page moves, H.264 is a little crisper
+ * when still but its software encoder drops frames at 4K, VP9 and VP8 smear the most while
+ * moving. The viewer lists these first in its offer, because the sender uses the first codec of
+ * the offer that it supports.
  */
 export const CODEC_PREFERENCE: readonly string[] = [
   'video/AV1',
@@ -72,6 +74,14 @@ export const CODEC_PREFERENCE: readonly string[] = [
   'video/VP9',
   'video/VP8',
 ];
+
+/**
+ * Codecs the presenter forwards guests' streams in, best first (`forwardCodecs` of the
+ * session): each link uses the first its offer lists. A viewer whose codec differs from the
+ * shown guest's gets that stream re-encoded by the presenter. H.264 and VP8 are in every
+ * browser (RFC 7742); AV1 is not (Safari only with hardware support).
+ */
+export const FORWARD_CODECS: readonly string[] = ['video/AV1', 'video/H264', 'video/VP8'];
 
 const clamp = (value: unknown, min: number, max: number, fallback: number): number => {
   const n = typeof value === 'number' ? value : Number.NaN;

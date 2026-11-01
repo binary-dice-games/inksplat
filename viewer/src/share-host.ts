@@ -11,6 +11,7 @@ import type { Peer, RendezvousSpec, Session } from '@inksplat/collab-session';
 import { drawingGate } from '@inksplat/collab-whiteboard';
 import {
   CANVASES,
+  FORWARD_CODECS,
   PROTOCOL,
   SCREEN_CHANNEL,
   STAGE_ASPECT,
@@ -176,6 +177,7 @@ export class ShareHost {
         { kind: 'manual' },
       ],
       accept: (channel, message, from) => host?.accept(channel, message, from) ?? false,
+      forwardCodecs: [...FORWARD_CODECS],
       ...(options.forwardFrames === false ? { forwardFrames: false } : {}),
     });
     host = new ShareHost(session, options);

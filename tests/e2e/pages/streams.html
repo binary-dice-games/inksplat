@@ -30,6 +30,16 @@
     return c.captureStream(15);
   }
 
+  // `noav1`: this browser cannot receive AV1 (as Safari without hardware support): its offer
+  // leaves it out.
+  if (q.get('noav1') === '1') {
+    const caps = RTCRtpReceiver.getCapabilities.bind(RTCRtpReceiver);
+    RTCRtpReceiver.getCapabilities = (kind) => {
+      const c = caps(kind);
+      return c && { ...c, codecs: c.codecs.filter((x) => !/av1/i.test(x.mimeType)) };
+    };
+  }
+
   const session = await createSession({
     role,
     token: q.get('token') ?? undefined,
@@ -45,6 +55,7 @@
     ],
     iceServers: [],
     forwardFrames: q.get('forward') !== '0',
+    forwardCodecs: q.get('fcodecs') ? q.get('fcodecs').split(',') : undefined,
     videoCodecs: ['video/AV1', 'video/H264', 'video/VP9', 'video/VP8'],
     log: (...a) => app.logs.push(a.join(' ')),
   });
@@ -52,7 +63,11 @@
   app.token = session.token;
   session.on('error', (e) => app.errors.push(e.reason ?? e.message));
   session.on('state', (s) => (app.state = s.state));
-  session.on('track', (stream) => (document.getElementById('v').srcObject = stream));
+  app.tracks = 0;
+  session.on('track', (stream) => {
+    app.tracks += 1;
+    document.getElementById('v').srcObject = stream;
+  });
 
   if (role === 'host') {
     app.stream = screen();
@@ -66,6 +81,20 @@
   } else {
     app.share = (on) => session.setUplink(on ? screen() : null);
   }
+
+  /** The codec (MIME type) of the video this page receives from the host, or null. */
+  app.inbound = async () => {
+    const pc = [...session.links.values()][0]?.link.pc;
+    if (!pc) return null;
+    const report = await pc.getStats();
+    const codecs = {};
+    let id = null;
+    report.forEach((r) => {
+      if (r.type === 'codec') codecs[r.id] = r.mimeType;
+      if (r.type === 'inbound-rtp' && r.kind === 'video' && r.framesDecoded > 0) id = r.codecId;
+    });
+    return id ? codecs[id] : null;
+  };
 
   /** The colour in the corner of a video: red, green, blue, or another. */
   app.color = (id = 'v') => {
