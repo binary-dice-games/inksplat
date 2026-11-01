@@ -918,6 +918,67 @@ describe('static presenter page', () => {
     await expect.poll(sticker).toBeNull();
   });
 
+  it('selects several items by dragging over them, moves them together, copies and pastes them', async () => {
+    const presenter = await presenterPage();
+    await site.startBoard(presenter);
+    const box = (await presenter.locator('#stage').boundingBox())!;
+    const at = (fx: number, fy: number): [number, number] => [
+      box.x + box.width * fx,
+      box.y + box.height * fy,
+    ];
+    const stickers = () =>
+      presenter.evaluate(() =>
+        [
+          ...document
+            .querySelector('collab-whiteboard')!
+            .shadowRoot!.querySelectorAll('.sticker-item use'),
+        ].map((n) => {
+          const r = n.getBoundingClientRect();
+          return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+        }),
+      );
+    await presenter.keyboard.press('4');
+    await presenter.mouse.click(...at(0.3, 0.5));
+    await presenter.mouse.click(...at(0.5, 0.5));
+    await presenter.mouse.click(...at(0.5, 0.8)); // left out of the sweep
+    await expect.poll(async () => (await stickers()).length).toBe(3);
+    const before = await stickers();
+
+    // From an empty place, over the first two.
+    await presenter.keyboard.press('1');
+    await presenter.mouse.move(...at(0.15, 0.5));
+    await presenter.mouse.down();
+    await presenter.mouse.move(...at(0.65, 0.5), { steps: 6 });
+    await presenter.mouse.up();
+    const bar = presenter.locator('collab-whiteboard .selbar');
+    await expect.poll(() => bar.textContent()).toContain('2 selected');
+
+    // Dragging one moves both.
+    await presenter.mouse.move(before[0]!.x, before[0]!.y);
+    await presenter.mouse.down();
+    await presenter.mouse.move(before[0]!.x + 40, before[0]!.y - 50, { steps: 5 });
+    await presenter.mouse.up();
+    // (Moved items are drawn last: the order changes.)
+    const where = (list: { x: number; y: number }[]) =>
+      list.map((s) => `${Math.round(s.x)},${Math.round(s.y)}`).sort();
+    const moved = where([
+      { x: before[0]!.x + 40, y: before[0]!.y - 50 },
+      { x: before[1]!.x + 40, y: before[1]!.y - 50 },
+      before[2]!,
+    ]);
+    await expect.poll(async () => where(await stickers())).toEqual(moved);
+    expect(await bar.textContent()).toContain('2 selected');
+
+    // Copied and pasted where the pointer is, the copies are selected.
+    await presenter.keyboard.press('ControlOrMeta+C');
+    await presenter.mouse.move(...at(0.75, 0.3), { steps: 3 });
+    await presenter.keyboard.press('ControlOrMeta+V');
+    await expect.poll(async () => (await stickers()).length).toBe(5);
+    expect(await bar.textContent()).toContain('2 selected');
+    await presenter.keyboard.press('Delete');
+    await expect.poll(async () => (await stickers()).length).toBe(3);
+  });
+
   it('hides the pointer when asked, and remembers the settings', async () => {
     const presenter = await presenterPage();
     await configure(presenter, 'never');

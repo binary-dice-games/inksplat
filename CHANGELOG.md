@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Several items can be selected with the pointer (1): a drag that starts on an empty place selects everything it passes over. Dragging any of them moves them all; the bar over them changes their colour; Delete removes them; Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste them (with the pins and threads on them) where the pointer is. A single selected item can be copied and pasted too.
+
+### Changed
+
+- Zoomed in, a mouse drag on an empty place with the pointer selects instead of panning: pan with Space+drag, the middle button, or touch.
+
 - Animated GIFs dropped on the board move, for everybody, once the file has arrived.
 - A picture with a transparent background is drawn as a cutout: its white border and shadow follow what shows instead of its rectangle.
 

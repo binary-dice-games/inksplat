@@ -88,6 +88,7 @@ presenter on Chrome.
 | 73 | One watching viewer on a lossy network (or throttled) while a viewer's stream is on screen | The lossy viewer recovers within a few seconds; the others are not affected beyond an occasional key frame |
 | 74 | A viewer on a phone | No **Share screen** button; watching and drawing work |
 | 75 | The viewer whose stream is on the screen closes its tab, or is removed | The screen goes black for everybody at once; the stream leaves the presenter's list |
+| 76 | With the pointer, drag from an empty place over two stickers, a line and a note; drag one; pick a colour in the bar; Ctrl+C, move, Ctrl+V; Delete | All four are outlined and the bar says "4 selected"; all move together; the line and note change colour; the copies appear at the pointer, selected, on the viewer too; Delete removes them |
 
 ## Known untested areas (from nymph)
 

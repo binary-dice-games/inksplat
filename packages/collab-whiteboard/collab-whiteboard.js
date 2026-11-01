@@ -26,7 +26,9 @@
  * out to its size with the note tool, and a thread pressed on or let go over an element gets a new
  * pin there. A sticker catches the pointer over its whole square (WebKit missed its <use>).
  * `saveBoard` gives the files as bytes and `loadBoard` takes them so (the page saves boards as
- * zips, with the files apart from the JSON).
+ * zips, with the files apart from the JSON). A drag of the pointer from an empty place selects
+ * several items, which are moved, coloured, removed, copied, cut and pasted together; zoomed in, a
+ * mouse drag there pans only with Space held.
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -1110,6 +1112,11 @@ const NOTE_SIZES = [9, 12, 18]; // small, medium, large
 const noteFont = (item) => item.fs ?? NOTE_TEXT;
 const NOTE_PAD = 10;
 const NOTE_SIZE = 90; // the width of a new note, in board units
+/** What has a colour that the bar over a selection of several items changes. */
+const COLORED = new Set(['ink', 'text', 'note', 'pin', 'arrow']);
+/** The clipboard type of copied items (JSON: {format, key, items}). */
+const CLIP_TYPE = 'application/x-inksplat-items';
+const CLIP_FORMAT = 'inksplat-items';
 /** What can be selected, to be changed or locked with the bar over it. */
 const SELECTABLE = new Set(['note', 'pin', 'arrow', 'image', 'link']);
 /** Drawn items, selected (to be removed with Delete or locked) with the pointer or the tool that makes them. */
@@ -1195,7 +1202,7 @@ const STRINGS = {
   canvas: 'Canvas',
   canvases: 'Canvases',
   peopleHere: 'here',
-  pointer: 'Pointer: use the page below (Esc)',
+  pointer: 'Pointer: use the page below, drag over the board to select (Esc)',
   pointerModeNames: {
     cursor: 'Cursor',
     laser: 'Laser pointer: drag to leave a trail',
@@ -1220,6 +1227,8 @@ const STRINGS = {
     all: 'Locked for everybody (click to unlock it)',
   },
   locked: 'That element is locked',
+  someLocked: 'Some of them are locked',
+  selectedCount: 'selected',
   copyText: 'Copy the text',
   noteCopied: 'Note copied to the clipboard',
   noteNotCopied: 'The browser did not allow copying',
@@ -1288,6 +1297,7 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .capture { fill: transparent; }
 .item text { white-space: pre; font-family: system-ui, -apple-system, "Segoe UI", sans-serif; paint-order: stroke; stroke: #ffffff; stroke-width: 0.25em; stroke-linejoin: round; }
 .item.erasing { opacity: 0.3; }
+.sweep { fill: none; stroke: var(--wb-accent); stroke-width: 2; stroke-dasharray: 5 4; stroke-linecap: round; stroke-linejoin: round; opacity: .7; pointer-events: none; }
 .cursors { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .cursor { position: absolute; left: 0; top: 0; will-change: transform; transition: transform 60ms linear; }
 .cursor .shape { position: absolute; }
@@ -1366,6 +1376,7 @@ svg.board.arrow, svg.board.pin { cursor: crosshair; }
 .selbar button { width: 28px; height: 28px; padding: 3px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--wb-fg); cursor: pointer; }
 .selbar button[aria-pressed="true"] { border-color: var(--wb-accent); background: var(--wb-hover, rgba(0,0,0,.08)); }
 .selbar hr { width: 1px; height: 20px; margin: 0 2px; border: 0; background: var(--wb-border); }
+.selbar .count { padding: 0 6px; color: var(--wb-fg); font-size: 12px; white-space: nowrap; }
 .selbar .swatch { display: block; width: 18px; height: 18px; margin: auto; border-radius: 50%; border: 1px solid rgba(0,0,0,.3); }
 textarea.note { position: absolute; margin: 0; padding: 2px 4px; border: 1px dashed var(--wb-accent); border-radius: 4px; background: rgba(255,255,255,.92);
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.2; resize: none; overflow: hidden; outline: none; pointer-events: auto; min-width: 4em; transform-origin: 0 0; }
@@ -1519,6 +1530,11 @@ export class Whiteboard {
     this.filePreview = options.filePreview ?? null;
     this.random = options.random ?? Math.random;
     this.selected = null;
+    this.group = new Set(); // the ids of a selection of two or more items (then `selected` is null)
+    this.sweeping = null; // the drag over the board that selects what it passes over
+    this.groupDrag = null; // the selection being moved
+    this.clipboard = null; // what was copied here last: {key, blobs} (the items go on the system clipboard)
+    this.spaceHeld = false; // Space held: a drag on the board pans it (when zoomed in)
     this.threading = null;
     this.lookup = (id) => this.model.get(id);
     this.copyText = options.copyText ?? copyToClipboard;
@@ -2055,9 +2071,10 @@ export class Whiteboard {
     if (options.backdrop && cleanImageData(options.backdrop, Infinity)) {
       svg.append(svgEl('image', { href: options.backdrop, x: b.x, y: b.y, width: b.width, height: b.height, preserveAspectRatio: 'none' }));
     }
-    const keep = [this.selected, this.editing];
+    const keep = [this.selected, this.editing, this.group];
     this.selected = null;
     this.editing = null;
+    this.group = new Set();
     this.stills = true; // a blob address means nothing outside this page
     try {
       for (const item of items) {
@@ -2068,7 +2085,7 @@ export class Whiteboard {
         svg.append(node);
       }
     } finally {
-      [this.selected, this.editing] = keep;
+      [this.selected, this.editing, this.group] = keep;
       this.stills = false;
     }
     return new XMLSerializer().serializeToString(svg);
@@ -2163,21 +2180,54 @@ export class Whiteboard {
       }
     }
     const kept = data.items.map((raw) => cleanItem(raw)).filter(Boolean);
+    const blobOf = (id, info) => {
+      const raw = bytes.get(id);
+      return raw && raw.length === info.bytes ? new Blob([raw], { type: info.mime }) : null;
+    };
+    const { ops, files, skipped: left } = this.placeCopies(kept, blobOf);
+    const skipped = data.items.length - kept.length + left;
+    this.render();
+    this.emit('change', { source: 'load' });
+    const added = ops.length;
+    this.drip(ops, files);
+    return { added, skipped, files: files.length, meta: data.meta && typeof data.meta === 'object' ? data.meta : {} };
+  }
+
+  /**
+   * @private Adds copies of `kept` (clean items) as new items of this person: what sits on an
+   * element, pins and threads are tied to the copies (a thread whose pins are not among them is
+   * left out), the files of pictures come from `blobOf(id, file)` when it has them. Nothing is sent.
+   * @param {object[]} kept
+   * @param {(id: string, file: {bytes: number, mime: string}) => Blob | null} blobOf
+   * @param {{dx?: number, dy?: number, page?: number, record?: boolean}} [opts] a shift, the canvas
+   *   for all of them (else each keeps its own), and whether they are undo steps
+   * @returns {{ops: object[], files: {id: string, blob: Blob}[], skipped: number, ids: Map<string, string>}}
+   */
+  placeCopies(kept, blobOf, { dx = 0, dy = 0, page = undefined, record = false } = {}) {
     const ids = new Map();
     const ops = [];
     const files = [];
-    let skipped = data.items.length - kept.length;
+    let skipped = 0;
     const place = (item) => {
       const { id, author, stamp, deleted, ...fields } = item;
       if (this.model.live().length >= LIMITS.items || (fields.kind === 'image' && this.model.live().filter((i) => i.kind === 'image').length >= LIMITS.images)) {
         skipped += 1;
         return;
       }
+      if (page !== undefined) {
+        fields.page = page > 0 ? page : undefined;
+      }
+      if (fields.kind === 'ink') {
+        fields.points = fields.points.map((v, k) => round1(v + (k % 2 ? dy : dx)));
+      } else if (fields.kind !== 'arrow' && finite(fields.x) && finite(fields.y)) {
+        fields.x = round1(fields.x + dx);
+        fields.y = round1(fields.y + dy);
+      }
       let blob = null;
       if (fields.kind === 'image' && fields.file) {
-        const raw = bytes.get(id);
-        if (raw && raw.length === fields.file.bytes && this.fileTotal() + files.reduce((n, f) => n + f.blob.size, 0) + raw.length <= LIMITS.filesTotal) {
-          blob = new Blob([raw], { type: fields.file.mime });
+        blob = blobOf(id, fields.file);
+        if (blob && this.fileTotal() + files.reduce((n, f) => n + f.blob.size, 0) + blob.size > LIMITS.filesTotal) {
+          blob = null;
         }
         if (!blob) {
           delete fields.file;
@@ -2203,10 +2253,13 @@ export class Whiteboard {
         }
         Object.assign(fields, { from, to });
       }
-      this.model.counter += 1;
-      const mine = `${this.model.peerId}.${this.model.counter}`;
+      let mine;
+      do {
+        this.model.counter += 1;
+        mine = `${this.model.peerId}.${this.model.counter}`;
+      } while (this.model.items.has(mine));
       ids.set(id, mine);
-      const op = this.model.put(null, { ...fields, id: mine, author: this.model.peerId }, { record: false });
+      const op = this.model.put(null, { ...fields, id: mine, author: this.model.peerId }, { record });
       ops.push(op);
       if (blob) {
         files.push({ id: mine, blob });
@@ -2224,11 +2277,7 @@ export class Whiteboard {
     queue.forEach(place);
     kept.filter((i) => i.kind === 'pin').forEach(place);
     kept.filter((i) => i.kind === 'arrow').forEach(place);
-    this.render();
-    this.emit('change', { source: 'load' });
-    const added = ops.length;
-    this.drip(ops, files);
-    return { added, skipped, files: files.length, meta: data.meta && typeof data.meta === 'object' ? data.meta : {} };
+    return { ops, files, skipped, ids };
   }
 
   /**
@@ -2781,6 +2830,14 @@ export class Whiteboard {
     if (this.selected && !seen.has(this.selected)) {
       this.selected = null;
     }
+    if (this.group.size > 0 && [...this.group].some((id) => !seen.has(id))) {
+      const left = [...this.group].filter((id) => seen.has(id));
+      this.group = new Set(left.length > 1 ? left : []);
+      if (left.length === 1) {
+        this.selected = left[0];
+        this.nodes.get(left[0])?.node.classList.add('selected');
+      }
+    }
     this.dropLooseThreads(all);
     this.renderSelbar();
     for (const id of this.files.keys()) {
@@ -2966,7 +3023,7 @@ export class Whiteboard {
   /** @private One item's SVG. Text goes in as textContent only. */
   itemNode(item, resolve = (id) => this.model.get(id)) {
     const own = item.author === this.model.peerId ? ' own' : '';
-    const g = svgEl('g', { class: `item ${item.kind}-item${own}${item.id === this.selected ? ' selected' : ''}${this.editing?.item?.id === item.id && this.editing.note ? ' editing' : ''}`, 'data-id': item.id });
+    const g = svgEl('g', { class: `item ${item.kind}-item${own}${item.id === this.selected || this.group.has(item.id) ? ' selected' : ''}${this.editing?.item?.id === item.id && this.editing.note ? ' editing' : ''}`, 'data-id': item.id });
     const turn = item.rot ? { transform: `rotate(${item.rot} ${item.x} ${item.y + pinOffset(item)})` } : {};
     if (item.kind === 'ink') {
       const d = inkPath(item.points);
@@ -3953,13 +4010,34 @@ export class Whiteboard {
     listen(this.container, 'pointerdown', (ev) => {
       if (this.selected && !this.onControls(ev) && this.itemAt(ev)?.id !== this.selected) {
         this.deselect();
+      } else if (this.group.size > 0 && !this.onControls(ev) && !this.group.has((this.pinAt(this.eventPoint(ev)) ?? this.itemAt(ev))?.id)) {
+        this.deselect();
       }
       this.pinGesture(ev);
     }, { capture: true });
+    listen(this.container, 'pointerdown', (ev) => this.sweepStart(ev));
+    listen(this.container, 'pointermove', (ev) => this.sweepMove(ev));
+    listen(this.container, 'pointerup', (ev) => this.sweepEnd(ev));
+    listen(this.container, 'pointercancel', (ev) => this.sweepEnd(ev, true));
     listen(this.container, 'pointerdown', (ev) => this.panStart(ev));
     listen(this.container, 'pointermove', (ev) => this.panMove(ev));
     listen(this.container, 'pointerup', (ev) => this.panEnd(ev));
     listen(this.container, 'pointercancel', (ev) => this.panEnd(ev));
+    // Space held: a drag on the board pans it, zoomed in (a drag alone selects).
+    const typing = (ev) => ev.target?.closest?.('input, textarea, select, [contenteditable]');
+    listen(window, 'keydown', (ev) => {
+      if (ev.key === ' ' && !this.editing && !typing(ev)) {
+        this.spaceHeld = true;
+        if (this.adapter.zoomed?.()) {
+          ev.preventDefault(); // not a scroll of the page
+        }
+      }
+    }, { capture: true });
+    listen(window, 'keyup', (ev) => ev.key === ' ' && (this.spaceHeld = false), { capture: true });
+    listen(window, 'blur', () => (this.spaceHeld = false));
+    // The selection is copied, cut and pasted with the clipboard.
+    listen(window, 'copy', (ev) => this.copied(ev, false));
+    listen(window, 'cut', (ev) => this.copied(ev, true));
     // Images dropped on the board.
     listen(this.container, 'dragover', (ev) => (this.hasFiles(ev) || this.hasLink(ev)) && ev.preventDefault());
     listen(this.container, 'drop', (ev) => this.dropped(ev));
@@ -4013,8 +4091,9 @@ export class Whiteboard {
   /** @private */
   panStart(ev) {
     const middle = ev.button === 1;
-    const empty = ev.button === 0 && this.tool === 'pointer' && !ev.composedPath().includes(this.board);
-    if (!this.adapter.panBy || this.onControls(ev) || !(middle || (empty && this.adapter.zoomed?.()))) {
+    // On the board itself, with the pointer: by touch, or with Space held (a drag alone selects).
+    const empty = ev.button === 0 && this.tool === 'pointer' && !ev.composedPath().includes(this.board) && (ev.pointerType === 'touch' || this.spaceHeld);
+    if (this.sweeping || !this.adapter.panBy || this.onControls(ev) || !(middle || (empty && this.adapter.zoomed?.()))) {
       return;
     }
     this.pan = { id: ev.pointerId, x: ev.clientX, y: ev.clientY };
@@ -4060,6 +4139,10 @@ export class Whiteboard {
   pasted(ev) {
     const t = ev.target;
     if (this.readOnlyFlag || t?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName ?? '')) {
+      return;
+    }
+    if (this.pasteItems(ev.clipboardData)) {
+      ev.preventDefault();
       return;
     }
     const url = this.linkIn(ev.clipboardData);
@@ -4144,6 +4227,11 @@ export class Whiteboard {
       return;
     }
     const hit = this.pinAt(this.eventPoint(ev)) ?? this.itemAt(ev); // a pin wins over what lies on it
+    if (hit && this.group.has(hit.id) && this.tool === 'pointer') {
+      this.beginGroupDrag(ev, this.eventPoint(ev));
+      this.groupDrag.pressed = hit.id;
+      return;
+    }
     const mine = hit && this.canEdit(hit) ? hit : null; // what can be changed by this peer
     const drawn = hit && DRAWN.has(hit.kind) && (this.tool === 'pointer' || this.tool === hit.kind);
     if (hit && (drawn || (SELECTABLE.has(hit.kind) && ['pointer', 'note', 'pin', 'sticker'].includes(this.tool)))) {
@@ -4230,6 +4318,8 @@ export class Whiteboard {
       this.dragThread(ev);
     } else if (this.dragging) {
       this.drag(ev);
+    } else if (this.groupDrag) {
+      this.dragGroup(ev);
     } else if (this.pendingNote) {
       this.dragNote(ev);
     }
@@ -4276,8 +4366,19 @@ export class Whiteboard {
     return !this.readOnlyFlag && mayChange(item, { ...item, stamp: [item.stamp[0], this.model.peerId], deleted: true });
   }
 
-  /** @private The Delete key: takes down the selected element, unless it is locked against this person. */
+  /** @private The Delete key: takes down the selected elements, but not those locked against this person. */
   removeSelected() {
+    if (this.group.size > 0) {
+      const items = [...this.group].map((id) => this.model.get(id)).filter(Boolean);
+      const free = items.filter((i) => this.canEdit(i));
+      for (const i of free) {
+        this.local(() => this.model.remove(i.id));
+      }
+      if (free.length < items.length) {
+        this.flash(this.strings.someLocked);
+      }
+      return;
+    }
     const item = this.model.get(this.selected);
     if (!item) {
       return;
@@ -4291,6 +4392,13 @@ export class Whiteboard {
 
   /** @private Selects one of your items (a note, a pin or a thread): a bar to change it appears over it. */
   select(id) {
+    if (this.group.size > 0) {
+      this.markGroup(false);
+      this.group = new Set();
+      if (this.selected === id) {
+        this.renderSelbar();
+      }
+    }
     if (this.selected === id) {
       return;
     }
@@ -4305,9 +4413,42 @@ export class Whiteboard {
 
   /** @private Nothing selected. */
   deselect() {
-    if (this.selected) {
+    if (this.selected || this.group.size > 0) {
       this.select(null);
     }
+  }
+
+  /** @private Marks the items of the selection as selected (or not), leaving their nodes in place. */
+  markGroup(on) {
+    for (const id of this.group) {
+      this.nodes.get(id)?.node.classList.toggle('selected', on);
+    }
+  }
+
+  /**
+   * Selects the items with these ids on the canvas shown (those not there are left out): one is
+   * selected as a click selects it, more become a selection that is moved by dragging any of them,
+   * coloured from the bar over it, removed with Delete, and copied, cut and pasted (Ctrl+C, X, V).
+   * @param {Iterable<string>} ids
+   * @returns {string[]} the ids now selected
+   */
+  selectItems(ids) {
+    const here = new Set(this.pageItems().map((i) => i.id));
+    const list = [...new Set(ids)].filter((id) => here.has(id));
+    if (list.length < 2) {
+      this.select(list[0] ?? null);
+      return list;
+    }
+    this.select(null);
+    this.group = new Set(list);
+    this.markGroup(true);
+    this.renderSelbar();
+    return list;
+  }
+
+  /** The ids of the items selected here (none, one, or a selection of several). */
+  selection() {
+    return this.group.size > 0 ? [...this.group] : this.selected ? [this.selected] : [];
   }
 
   /**
@@ -4316,6 +4457,10 @@ export class Whiteboard {
    * and for its owner the lock. Only what the person may change is offered.
    */
   renderSelbar() {
+    if (this.group.size > 0) {
+      this.renderGroupBar();
+      return;
+    }
     const item = this.selected ? this.model.get(this.selected) : null;
     const mine = item?.author === this.model.peerId;
     const editable = !!item && this.canEdit(item);
@@ -4393,17 +4538,67 @@ export class Whiteboard {
   }
 
   /**
+   * @private The bar over a selection of several items: how many there are and the colours, which
+   * change those of them that have one and may be changed (a note takes the pale version).
+   */
+  renderGroupBar() {
+    const items = [...this.group].map((id) => this.model.get(id)).filter(Boolean);
+    const coloured = items.filter((i) => COLORED.has(i.kind) && this.canEdit(i));
+    const sig = items.map((i) => `${i.id}@${i.stamp[0]}.${i.stamp[1]}`).join(' ');
+    if (this.readOnlyFlag || items.length === 0) {
+      this.selbar.hidden = true;
+      this.selbar.replaceChildren();
+      delete this.selbar.dataset.sig;
+      delete this.selbar.dataset.id;
+      return;
+    }
+    if (this.selbar.dataset.sig !== sig || this.selbar.dataset.id !== '*') {
+      const s = this.strings;
+      const parts = [htmlEl('span', { class: 'count' }, `${items.length} ${s.selectedCount}`)];
+      const tone = (i, c) => (i.kind === 'note' ? pastel(c) : c);
+      const colours = new Set(coloured.map((i) => i.color.toLowerCase()));
+      if (coloured.length > 0) {
+        parts.push(htmlEl('hr'));
+        for (const [n, c] of PALETTE.entries()) {
+          const pressed = coloured.every((i) => i.color.toLowerCase() === tone(i, c).toLowerCase()) && colours.size > 0;
+          const b = htmlEl('button', { type: 'button', title: `${s.color}: ${COLOR_NAMES[n]}`, 'aria-label': `${s.color}: ${COLOR_NAMES[n]}`, 'aria-pressed': String(pressed) }, `<span class="swatch" style="background:${c}"></span>`);
+          b.addEventListener('pointerdown', (e) => e.preventDefault());
+          b.addEventListener('click', () => {
+            for (const i of coloured) {
+              const now = this.model.get(i.id);
+              if (now && this.canEdit(now)) {
+                this.local(() => this.model.change(i.id, { color: tone(now, c) }));
+              }
+            }
+          });
+          parts.push(b);
+        }
+      }
+      this.selbar.replaceChildren(...parts);
+      this.selbar.dataset.sig = sig;
+      this.selbar.dataset.id = '*';
+    }
+    this.selbar.hidden = false;
+    this.placeSelbar();
+  }
+
+  /**
    * @private The selection bar sits over the middle top of the item (a thread: the middle of it).
    * It is kept inside the board's visible area: moved sideways near the left or right edge, and
    * put under the item when there is no room over it.
    */
   placeSelbar(item = this.selected ? this.model.get(this.selected) : null) {
-    if (!item || this.selbar.hidden) {
+    const group = this.group.size > 0 ? [...this.group].map((id) => this.model.get(id)).filter(Boolean) : [];
+    if ((!item && group.length === 0) || this.selbar.hidden) {
       return;
     }
     let above;
     let below;
-    if (item.kind === 'arrow') {
+    if (group.length > 0) {
+      const b = this.bounds(group);
+      above = { x: b.x + b.width / 2, y: b.y - 22 };
+      below = { x: above.x, y: b.y + b.height + 22 };
+    } else if (item.kind === 'arrow') {
       const a = pinPoint(this.model.get(item.from), this.lookup);
       const b = pinPoint(this.model.get(item.to), this.lookup);
       above = a && b ? { x: (a.x + b.x) / 2, y: Math.max(a.y, b.y) + 30 } : null;
@@ -4790,6 +4985,8 @@ export class Whiteboard {
         this.editing.preview = null; // the note is where it was put: the text box follows it there
         this.placeTextarea();
       }
+    } else if (this.groupDrag) {
+      this.endGroupDrag(ev, cancelled);
     } else if (this.pendingNote) {
       const n = this.pendingNote;
       const b = cancelled ? null : this.noteDrag(ev);
@@ -4901,6 +5098,298 @@ export class Whiteboard {
       return null;
     }
     return host;
+  }
+
+  /**
+   * @private A press with the pointer (the cursor or the magnifier) on the board where there is no
+   * item starts a sweep: what the pointer passes over while it is held is selected, as the eraser
+   * marks what it passes over. Touch is left to the page (and pans the board when zoomed in), and
+   * Space+drag pans.
+   */
+  sweepStart(ev) {
+    const path = ev.composedPath();
+    if (ev.button !== 0 || this.tool !== 'pointer' || !PASSIVE_MODES.has(this.style.pointerMode) || this.readOnlyFlag || this.editing || this.threading || this.spaceHeld || ev.pointerType === 'touch' || path.includes(this.host) || this.onControls(ev)) {
+      return;
+    }
+    this.sweeping = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, active: false, ids: new Set(), points: [], node: null };
+    this.container.setPointerCapture?.(ev.pointerId);
+  }
+
+  /** @private The sweep goes on: every few pixels along the way, the item under the pointer is taken. */
+  sweepMove(ev) {
+    const w = this.sweeping;
+    if (!w || ev.pointerId !== w.id) {
+      return;
+    }
+    if (!w.active) {
+      if (Math.hypot(ev.clientX - w.x, ev.clientY - w.y) < 4) {
+        return;
+      }
+      w.active = true;
+      w.node = svgEl('path', { class: 'sweep', 'vector-effect': 'non-scaling-stroke' });
+      this.liveGroup.append(w.node);
+      this.takeAt(w.x, w.y);
+    }
+    // Along the segment, so a quick move does not jump over a small item.
+    const steps = Math.max(1, Math.ceil(Math.hypot(ev.clientX - w.x, ev.clientY - w.y) / 4));
+    for (let k = 1; k <= steps; ++k) {
+      this.takeAt(w.x + ((ev.clientX - w.x) * k) / steps, w.y + ((ev.clientY - w.y) * k) / steps);
+    }
+    w.x = ev.clientX;
+    w.y = ev.clientY;
+    w.node.setAttribute('d', inkPath(w.points));
+  }
+
+  /** @private The item under the screen point (x, y) joins the sweep (a pin wins over what it is on). */
+  takeAt(x, y) {
+    const w = this.sweeping;
+    const at = { clientX: x, clientY: y };
+    const p = this.eventPoint(at);
+    w.points.push(round1(p.x), round1(p.y));
+    const hit = this.pinAt(p) ?? this.itemAt(at);
+    if (hit && !w.ids.has(hit.id)) {
+      w.ids.add(hit.id);
+      this.nodes.get(hit.id)?.node.classList.add('selected');
+    }
+  }
+
+  /** @private Letting go ends the sweep: what it passed over is selected (nothing, if it was cancelled). */
+  sweepEnd(ev, cancelled = false) {
+    const w = this.sweeping;
+    if (!w || ev.pointerId !== w.id) {
+      return;
+    }
+    this.sweeping = null;
+    this.container.releasePointerCapture?.(ev.pointerId);
+    w.node?.remove();
+    for (const id of w.ids) {
+      this.nodes.get(id)?.node.classList.remove('selected');
+    }
+    if (w.active && !cancelled) {
+      this.selectItems(w.ids);
+    }
+  }
+
+  /**
+   * @private A press on an item of a selection of several starts moving them all. What is locked
+   * against this person stays, and what sits on an item that moves goes along with it (as when
+   * that item is moved alone), so it is not moved twice.
+   */
+  beginGroupDrag(ev, p) {
+    const movable = new Map([...this.group].map((id) => this.model.get(id)).filter((i) => i && i.kind !== 'arrow' && this.canEdit(i)).map((i) => [i.id, i]));
+    const carried = (i) => {
+      let on = i.on;
+      for (let k = 0; on && k < 8; ++k) {
+        if (movable.has(on)) {
+          return true;
+        }
+        on = this.model.get(on)?.on;
+      }
+      return false;
+    };
+    const roots = [...movable.values()].filter((i) => !carried(i));
+    // What is drawn moving: the items, what sits on them, and the pins on any of those.
+    const live = this.model.live();
+    const shown = new Set(roots.map((i) => i.id));
+    for (const r of roots) {
+      if (hostFrame(r)) {
+        for (const id of followers(live, r, r).keys()) {
+          shown.add(id);
+        }
+      }
+    }
+    for (const i of live) {
+      if (i.kind === 'pin' && shown.has(i.on)) {
+        shown.add(i.id);
+      }
+    }
+    const threads = live.filter((i) => i.kind === 'arrow' && (shown.has(i.from) || shown.has(i.to)));
+    this.groupDrag = { id: ev.pointerId, from: p, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, moved: false, roots: roots.map((i) => i.id), shown, threads: threads.map((i) => i.id), pressed: null };
+    ev.preventDefault();
+    this.popover.hidden = true;
+    this.board.setPointerCapture?.(ev.pointerId);
+  }
+
+  /** @private How an item of the selection being moved is drawn for now, `dx`, `dy` away. */
+  movedBy(i, dx, dy) {
+    if (i.kind === 'ink') {
+      return { ...i, points: i.points.map((v, k) => v + (k % 2 ? dy : dx)) };
+    }
+    if (i.kind === 'pin') {
+      const at = pinPoint(i, this.lookup);
+      return { ...i, x: at.x + dx, y: at.y + dy, on: undefined };
+    }
+    return { ...i, x: i.x + dx, y: i.y + dy };
+  }
+
+  /** @private While the selection is moved: its nodes are shifted and the threads tied to them redrawn. */
+  dragGroup(ev) {
+    const g = this.groupDrag;
+    const p = this.eventPoint(ev);
+    g.dx = p.x - g.from.x;
+    g.dy = p.y - g.from.y;
+    if (!g.moved && Math.hypot(ev.clientX - g.x0, ev.clientY - g.y0) < 3) {
+      return;
+    }
+    if (!g.moved) {
+      this.selbar.classList.add('moving');
+    }
+    g.moved = true;
+    this.showGroupAt(g.dx, g.dy);
+  }
+
+  /** @private Draws the selection being moved `dx`, `dy` away from where it is (0, 0: where it is). */
+  showGroupAt(dx, dy) {
+    const g = this.groupDrag;
+    for (const id of g.shown) {
+      const node = this.nodes.get(id)?.node;
+      if (dx || dy) {
+        node?.setAttribute('transform', `translate(${dx} ${dy})`);
+      } else {
+        node?.removeAttribute('transform');
+      }
+    }
+    const resolve = (id) => {
+      const i = this.model.get(id);
+      return i && g.shown.has(id) ? this.movedBy(i, dx, dy) : i;
+    };
+    for (const id of g.threads) {
+      const entry = this.nodes.get(id);
+      const item = this.model.get(id);
+      if (entry && item) {
+        const node = this.itemNode(item, resolve);
+        entry.node.replaceWith(node);
+        entry.node = node;
+      }
+    }
+  }
+
+  /**
+   * @private Letting go puts the selection where it was moved to. A press and release without a
+   * move selects just the item pressed on.
+   */
+  endGroupDrag(ev, cancelled) {
+    const g = this.groupDrag;
+    this.showGroupAt(0, 0);
+    this.groupDrag = null;
+    this.selbar.classList.remove('moving');
+    if (!g.moved) {
+      if (!cancelled && g.pressed) {
+        this.select(g.pressed);
+      }
+      return;
+    }
+    this.noClick = true;
+    setTimeout(() => {
+      this.noClick = false;
+    }, 50);
+    if (cancelled) {
+      return;
+    }
+    const roots = g.roots.map((id) => this.model.get(id)).filter((i) => i && this.canEdit(i));
+    // The elements first, so the pins are attached to where those are now.
+    for (const it of roots.filter((i) => i.kind !== 'pin')) {
+      if (it.kind === 'ink') {
+        this.local(() => this.model.change(it.id, { points: it.points.map((v, k) => round1(v + (k % 2 ? g.dy : g.dx))) }));
+      } else {
+        const to = { x: round1(it.x + g.dx), y: round1(it.y + g.dy) };
+        this.commit(it, { ...to, ...this.anchorFields(it, { ...it, ...to }, null) });
+      }
+    }
+    for (const it of roots.filter((i) => i.kind === 'pin')) {
+      const at = pinPoint(it, this.lookup);
+      const to = { x: round1(at.x + g.dx), y: round1(at.y + g.dy) };
+      this.local(() => this.model.change(it.id, { ...to, ...this.attachment(to, it.id) }));
+    }
+    this.render();
+  }
+
+  /**
+   * @private What a copy of the selection takes: the items selected, what sits on them and the pins
+   * on those, and the threads between any two of them; in drawing order. A pin on something left
+   * behind is taken where it is drawn.
+   */
+  copySet() {
+    const ids = new Set(this.selection());
+    const live = this.pageItems();
+    for (let grew = true; grew; ) {
+      grew = false;
+      for (const i of live) {
+        if (!ids.has(i.id) && i.on && ids.has(i.on) && (i.kind === 'pin' || ELEMENTS.has(i.kind))) {
+          ids.add(i.id);
+          grew = true;
+        }
+      }
+    }
+    for (const i of live) {
+      if (i.kind === 'arrow' && ids.has(i.from) && ids.has(i.to)) {
+        ids.add(i.id);
+      }
+    }
+    return live.filter((i) => ids.has(i.id) && !(i.kind === 'arrow' && !(ids.has(i.from) && ids.has(i.to)))).map((i) => (i.kind === 'pin' && i.on && !ids.has(i.on) ? { ...i, ...pinPoint(i, this.lookup) } : i));
+  }
+
+  /**
+   * @private Ctrl+C (and Ctrl+X, which then takes down what may be): the selection goes on the
+   * clipboard as items (their texts as plain text), and the files of its pictures are kept here to
+   * go with what is pasted on this board.
+   */
+  copied(ev, cut) {
+    const t = ev.target;
+    const text = typeof document.getSelection === 'function' ? document.getSelection() : null;
+    if (this.editing || this.selection().length === 0 || !ev.clipboardData || t?.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t?.tagName ?? '') || (text && !text.isCollapsed)) {
+      return;
+    }
+    const items = this.copySet();
+    const key = `${this.model.peerId}.${Math.floor(this.random() * 1e9)}`;
+    const blobs = new Map();
+    for (const i of items) {
+      if (i.kind === 'image' && this.files.has(i.id)) {
+        blobs.set(i.id, this.files.get(i.id));
+      }
+    }
+    this.clipboard = { key, blobs };
+    ev.clipboardData.setData(CLIP_TYPE, JSON.stringify({ format: CLIP_FORMAT, key, items }));
+    ev.clipboardData.setData('text/plain', items.filter((i) => i.kind === 'note' || i.kind === 'text').map((i) => i.text).filter(Boolean).join('\n'));
+    ev.preventDefault();
+    if (cut && !this.readOnlyFlag) {
+      this.removeSelected();
+    }
+  }
+
+  /**
+   * @private Pastes items copied from a board: new ones of this person on the canvas shown, put
+   * around the pointer (or a little away from the originals), and selected.
+   * @returns {boolean} whether the clipboard held items
+   */
+  pasteItems(data) {
+    let raw;
+    try {
+      raw = JSON.parse(data?.getData(CLIP_TYPE) || 'null');
+    } catch {
+      return false;
+    }
+    if (raw?.format !== CLIP_FORMAT || !Array.isArray(raw.items) || raw.items.length > LIMITS.items) {
+      return false;
+    }
+    const kept = raw.items.map((i) => cleanItem(i)).filter((i) => i && !i.deleted);
+    if (kept.length === 0) {
+      return true;
+    }
+    const b = this.bounds(kept);
+    const at = this.lastPoint;
+    const dx = at ? round1(at.x - (b.x + b.width / 2)) : 20;
+    const dy = at ? round1(at.y - (b.y + b.height / 2)) : 20;
+    const blobs = raw.key === this.clipboard?.key ? this.clipboard.blobs : new Map();
+    const { ops, files, ids } = this.placeCopies(kept, (id) => blobs.get(id) ?? null, { dx, dy, page: this.page, record: true });
+    if (ops.length < kept.length) {
+      this.emit('error', new WhiteboardError(`The whiteboard is full (${LIMITS.items} items, ${LIMITS.images} images): not everything was pasted.`));
+    }
+    this.render();
+    this.emit('change', { source: 'local' });
+    this.drip(ops, files);
+    this.selectItems(ids.values());
+    return true;
   }
 
   /** @private Marks the items under the eraser; they go on pointer up. */
@@ -5079,9 +5568,9 @@ export class Whiteboard {
       }
     } else if (!ctrl && !ev.altKey && ev.key === '0' && this.adapter.resetView) {
       this.resetZoom();
-    } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && this.selected && this.model.get(this.selected)) {
+    } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && ((this.selected && this.model.get(this.selected)) || this.group.size > 0)) {
       this.removeSelected();
-    } else if (ev.key === 'Escape' && this.selected) {
+    } else if (ev.key === 'Escape' && (this.selected || this.group.size > 0)) {
       this.deselect();
     } else if (ev.key === 'Escape' && this.emoteWheel) {
       this.closeWheel(false);
