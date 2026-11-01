@@ -170,7 +170,15 @@ Same tools, data model, merge rules and limits as nymph. Changes:
 - **Own items.** Items carry `author`; the author can drag them (pointer tool, or the
   tool that made them). Clicking an element selects it (lines, texts and stickers with the pointer
   or their own tool) and Delete or Backspace removes the selected one; the right button does
-  nothing to elements, because removing what was under it surprised people. Shift+drag scales and Ctrl/Alt+drag
+  nothing to elements, because removing what was under it surprised people. A drag with the
+  pointer from an empty place (mouse or pen; touch is left to the page) selects what it passes over,
+  sampled every few pixels as the eraser does (`selectItems`, `selection`): dragged together (what
+  sits on a moved element follows it, so it is not moved twice; locked items stay), coloured from
+  the bar, deleted, and copied, cut and pasted through `copy`/`cut`/`paste` events with the type
+  `application/x-inksplat-items` (JSON items; picture files go along only on the same page).
+  Pasting reuses `loadBoard`'s placement (`placeCopies`: new ids, attachments and threads remapped).
+  Zoomed in, a mouse drag on an empty place therefore no longer pans: Space+drag, the middle button
+  or touch do. Shift+drag scales and Ctrl/Alt+drag
   rotates stickers about their centre and what has a pin (notes, images, links) about its
   pin, which stays put (`rot` degrees, absent when 0; `x`, `y` stay the unturned centre, so the
   true centre is `centre(item)`). The

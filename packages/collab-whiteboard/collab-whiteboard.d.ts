@@ -470,6 +470,14 @@ export class Whiteboard {
   clear(): void;
   /** Removes only the drawings (lines, texts, stickers) for everyone; elements stay. Returns how many. */
   clearDrawings(): number;
+  /**
+   * Selects the items with these ids on the canvas shown (others are left out). Several make a
+   * selection that is moved by dragging any of them, coloured from the bar over it, removed with
+   * Delete and copied, cut and pasted with the clipboard. Returns the ids now selected.
+   */
+  selectItems(ids: Iterable<string>): string[];
+  /** The ids of the items selected here (none, one, or several). */
+  selection(): string[];
   /** The canvas shown here (0 to {@link PAGES} - 1). */
   currentPage(): number;
   /** Shows another canvas, only for this person; the others are told where they are. */
