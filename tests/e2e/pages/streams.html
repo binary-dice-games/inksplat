@@ -32,11 +32,18 @@
 
   // `noav1`: this browser cannot receive AV1 (as Safari without hardware support): its offer
   // leaves it out.
-  if (q.get('noav1') === '1') {
+  // `only`: it can receive only this codec (its offer lists nothing else).
+  // `prefer`: its offer lists these first (default AV1, H.264, VP9, VP8).
+  if (q.get('noav1') === '1' || q.get('only')) {
+    const only = q.get('only');
     const caps = RTCRtpReceiver.getCapabilities.bind(RTCRtpReceiver);
     RTCRtpReceiver.getCapabilities = (kind) => {
       const c = caps(kind);
-      return c && { ...c, codecs: c.codecs.filter((x) => !/av1/i.test(x.mimeType)) };
+      const keep = (x) =>
+        only
+          ? x.mimeType.toLowerCase() === only.toLowerCase() || /rtx|red|fec/i.test(x.mimeType)
+          : !/av1/i.test(x.mimeType);
+      return c && { ...c, codecs: c.codecs.filter(keep) };
     };
   }
 
@@ -56,7 +63,7 @@
     iceServers: [],
     forwardFrames: q.get('forward') !== '0',
     forwardCodecs: q.get('fcodecs') ? q.get('fcodecs').split(',') : undefined,
-    videoCodecs: ['video/AV1', 'video/H264', 'video/VP9', 'video/VP8'],
+    videoCodecs: (q.get('prefer') ?? 'video/AV1,video/H264,video/VP9,video/VP8').split(','),
     log: (...a) => app.logs.push(a.join(' ')),
   });
   app.session = session;

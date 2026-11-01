@@ -558,6 +558,16 @@ export class FrameRouter {
     this.outputs.delete(key);
   }
 
+  /** The codec output `key` really sends in; it then waits for a key frame. (inksplat addition) */
+  setOutputCodec(key, codec) {
+    const out = this.outputs.get(key);
+    if (out) {
+      out.codec = codec;
+      out.waiting = true;
+      this.want();
+    }
+  }
+
   /**
    * Whether output `key` cannot take the source's frames as they are (their codecs differ), so
    * its own encoder sends the decoded source. (inksplat addition)
@@ -710,7 +720,9 @@ export function sdpCodecs(sdp, mid) {
 function pickForwardCodec(offered, wanted, kind) {
   const Api = kind === 'send' ? globalThis.RTCRtpSender : globalThis.RTCRtpReceiver;
   const caps = (Api?.getCapabilities?.('video')?.codecs ?? []).map((c) => c.mimeType.toLowerCase());
-  return wanted.find((m) => offered.includes(m.toLowerCase()) && caps.includes(m.toLowerCase()));
+  return wanted.find(
+    (m) => !AUX_CODEC.test(m) && offered.includes(m.toLowerCase()) && caps.includes(m.toLowerCase()),
+  );
 }
 
 /** H.264 entries first that every decoder takes: packetization mode 1, constrained baseline. */
@@ -782,8 +794,11 @@ class MediaController {
     this.relay = null;
     this.relaySet = false;
     this.encoded = false;
-    /** Codecs to forward, best first (MIME types); chosen per transceiver from the offer. */
-    this.forwardCodecs = ['video/VP8'];
+    /**
+     * Codecs to forward, best first (MIME types); chosen per transceiver from the offer. Null:
+     * each guest's own order (the first codec of its offer that this browser can).
+     */
+    this.forwardCodecs = null;
     this.router = null;
     this.placeholderTrack = null;
     this.pliTimer = null;
@@ -889,9 +904,14 @@ class MediaController {
     this.links.set(pc, rec);
     const offer = pc.remoteDescription?.sdp;
     if (this.encoded) {
-      rec.downCodec = pickForwardCodec(sdpCodecs(offer, down.mid), this.forwardCodecs, 'send');
+      const offered = sdpCodecs(offer, down.mid);
+      rec.downCodec = pickForwardCodec(offered, this.forwardCodecs ?? offered, 'send');
     }
-    this.codecs(down, rec.downCodec);
+    // With forwarding the downlink's codec is set on its sender once negotiated (`answered`):
+    // Chrome sends with the first codec of the guest's offer whatever the answer lists.
+    if (!this.encoded) {
+      this.codecs(down);
+    }
     if (this.encoded) {
       const { readable, writable } = down.sender.createEncodedStreams();
       const writer = writable.getWriter();
@@ -901,7 +921,8 @@ class MediaController {
     if (up) {
       up.direction = 'recvonly';
       if (this.encoded) {
-        rec.upCodec = pickForwardCodec(sdpCodecs(offer, up.mid), this.forwardCodecs, 'receive');
+        const offered = sdpCodecs(offer, up.mid);
+        rec.upCodec = pickForwardCodec(offered, this.forwardCodecs ?? offered, 'receive');
       }
       this.codecs(up, rec.upCodec);
       dbg('video codecs of the link:', rec.downCodec ?? '?', 'down,', rec.upCodec ?? '?', 'up');
@@ -922,6 +943,41 @@ class MediaController {
     });
     down.sender.replaceTrack(this.trackFor(rec)).catch(() => {});
     this.apply(down.sender);
+  }
+
+  /**
+   * Host: after setLocalDescription(answer). With forwarding, the downlink sends in its chosen
+   * codec (`encodings[0].codec`, among those negotiated); where that cannot be set, the codec it
+   * really sends (the first negotiated) is what the router goes by. (inksplat addition)
+   */
+  async answered(pc) {
+    const rec = this.links.get(pc);
+    if (!this.encoded || !rec) {
+      return;
+    }
+    const sender = rec.sender;
+    const p = sender.getParameters();
+    const negotiated = (p.codecs ?? []).filter((c) => !AUX_CODEC.test(c.mimeType));
+    const want = rec.downCodec?.toLowerCase();
+    const entry = negotiated
+      .filter((c) => c.mimeType.toLowerCase() === want)
+      .sort((a, b) => h264Rank(a) - h264Rank(b))[0];
+    if (entry && p.encodings?.length) {
+      try {
+        p.encodings[0].codec = entry;
+        await sender.setParameters(p);
+        dbg('video downlink codec:', entry.mimeType);
+        return;
+      } catch (e) {
+        dbg('video downlink codec not set:', e?.message ?? e);
+      }
+    }
+    const actual = negotiated[0]?.mimeType;
+    if (actual && actual.toLowerCase() !== want) {
+      rec.downCodec = actual;
+      this.router.setOutputCodec(rec, actual);
+      dbg('video downlink codec:', actual, '(the guest\'s first)');
+    }
   }
 
   /** Host: the link of `pc` belongs to guest `peerId` (after its hello). */
@@ -1255,6 +1311,7 @@ async function makeAnswer(iceServers, offerSdp, gatherMs, media) {
   await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
   media?.prepareAnswer(pc);
   await pc.setLocalDescription(await pc.createAnswer());
+  await media?.answered(pc);
   await gathered(pc, gatherMs);
   return { link, pc, sdp: pc.localDescription.sdp };
 }

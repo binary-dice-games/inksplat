@@ -109,7 +109,7 @@ export interface SessionOptions {
   /**
    * Host, with forwarding: the codecs (MIME types) to send and receive on, best first; each
    * link uses the first its offer lists. A viewer whose link uses another codec than the shown
-   * guest's gets that stream decoded and encoded again. Default `['video/VP8']`.
+   * guest's gets that stream decoded and encoded again. Default: each guest's own order.
    */
   forwardCodecs?: string[];
   /**
@@ -228,6 +228,8 @@ export class FrameRouter<F extends RoutedFrame = RoutedFrame> {
   readonly source: string | null;
   setSource(source: string | null): void;
   addOutput(key: unknown, id: string | null, write: (frame: unknown) => void, codec?: string): void;
+  /** The codec output `key` really sends in; it then waits for a key frame. */
+  setOutputCodec(key: unknown, codec: string): void;
   /** Whether output `key` re-encodes the source (its codec differs from the source's). */
   reencodes(key: unknown): boolean;
   setOutputId(key: unknown, id: string): void;

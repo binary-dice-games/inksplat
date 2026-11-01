@@ -165,11 +165,15 @@ On the host (`MediaController` in `collab-session.js`, `FrameRouter` for the rou
   frames pass (with the output's timestamp); otherwise its track is the placeholder and the
   forwarded frames are written instead; with no source nothing is written.
 - **Codec per link.** Forwarded frames decode only where the source's uplink and the viewer's
-  downlink use the same codec. The host picks each transceiver's codec when it answers: the
-  first of `forwardCodecs` (inksplat: AV1, H.264, VP8; `packages/defaults` `FORWARD_CODECS`)
-  that the guest's offer lists and the host's browser can, and answers with that codec alone
-  (with its retransmission and error-correction helpers; for H.264 packetization mode 1 and
-  constrained baseline first). A downlink whose codec differs from the shown source's uplink
+  downlink use the same codec. The host picks each transceiver's codec: the first of
+  `forwardCodecs` (inksplat: AV1, H.264, VP8; `packages/defaults` `FORWARD_CODECS`; without
+  it, the guest's own order) that the guest's offer lists and the host's browser can. The
+  **uplink** gets it by an answer with that codec alone (with its retransmission and
+  error-correction helpers; for H.264 packetization mode 1 and constrained baseline first): the
+  guest sends with the first codec of the answer. The **downlink** cannot: Chrome sends with
+  the first codec of the guest's offer whatever the answer lists (tested), so once negotiated
+  the host sets `encodings[0].codec` on the sender; where that fails the router goes by the
+  codec really sent (the offer's first). A downlink whose codec differs from the shown source's uplink
   (say a Safari viewer without AV1 while a Chrome guest shares in AV1) **re-encodes**: its
   sender takes the source's decoded track and the router passes that sender's own frames
   (`FrameRouter.reencodes`), asking that sender for a key frame when it starts. Tried in Chrome

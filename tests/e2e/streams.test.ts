@@ -162,41 +162,50 @@ describe("guests' streams relayed by the host", () => {
     const token = await host.evaluate(() => (window as unknown as { app: App }).app.token);
     const guest = (id: string, color: string, extra: Record<string, string> = {}) =>
       open({ role: 'guest', id, color, token, ...extra });
-    const [ana, bob, cy] = await Promise.all([
+    const [ana, bob, cy, dan, eve] = await Promise.all([
       guest('ana-0001', '#ee0000'),
       guest('bob-0001', '#00cc00', { noav1: '1' }),
       guest('cy-00001', '#888888'),
+      // Dan would rather have VP9 but takes AV1 too: the host picks AV1, whatever his order.
+      guest('dan-0001', '#888888', { prefer: 'video/VP9,video/AV1' }),
+      // Eve takes nothing the host forwards in: she gets her VP9 and every guest re-encoded.
+      guest('eve-0001', '#888888', { only: 'video/VP9' }),
     ]);
-    await Promise.all([joined(ana), joined(bob), joined(cy)]);
-    await Promise.all([shows(ana, 'blue'), shows(bob, 'blue'), shows(cy, 'blue')]);
+    const all = [ana, bob, cy, dan, eve];
+    await Promise.all(all.map(joined));
+    await Promise.all(all.map((p) => shows(p, 'blue')));
     const inbound = (p: Page) =>
       p.evaluate(() => (window as unknown as { app: App }).app.inbound());
     expect(await inbound(cy)).toBe('video/AV1');
     expect(await inbound(bob)).toBe('video/H264');
+    expect(await inbound(dan)).toBe('video/AV1');
+    expect(await inbound(eve)).toBe('video/VP9');
 
     // Ana's AV1 stream: forwarded to Cy, decoded and encoded again in H.264 for Bob.
     await ana.evaluate(() => (window as unknown as { app: App }).app.share(true));
     const run = app(host);
     await run(() => (window as unknown as { app: App }).app.ask('ana-0001', true));
     await run(() => (window as unknown as { app: App }).app.session.setRelay('ana-0001'));
-    await Promise.all([shows(bob, 'red'), shows(cy, 'red')]);
+    await Promise.all([bob, cy, dan, eve].map((p) => shows(p, 'red')));
     expect(await inbound(bob)).toBe('video/H264');
     expect(await inbound(cy)).toBe('video/AV1');
+    expect(await inbound(dan)).toBe('video/AV1');
+    expect(await inbound(eve)).toBe('video/VP9');
 
     // Bob's turn (his uplink offers AV1: only his downlink lacks it).
     await bob.evaluate(() => (window as unknown as { app: App }).app.share(true));
     await run(() => (window as unknown as { app: App }).app.ask('bob-0001', true));
     await run(() => (window as unknown as { app: App }).app.session.setRelay('bob-0001'));
-    await Promise.all([shows(ana, 'green'), shows(cy, 'green')]);
+    await Promise.all([ana, cy, dan, eve].map((p) => shows(p, 'green')));
 
     // Back to the host's own: everybody on their own encoder.
     await run(() => (window as unknown as { app: App }).app.session.setRelay('host-0001'));
-    await Promise.all([shows(ana, 'blue'), shows(bob, 'blue'), shows(cy, 'blue')]);
-    for (const p of [host, ana, bob, cy]) {
+    await Promise.all(all.map((p) => shows(p, 'blue')));
+    for (const p of [host, ...all]) {
       expect(await p.evaluate(() => (window as unknown as { app: App }).app.errors)).toEqual([]);
     }
     // Only the link each guest kept announced its video (offers on other links may be answered).
-    for (const p of [ana, bob, cy]) {
+    for (const p of all) {
       expect(await p.evaluate(() => (window as unknown as { app: App }).app.tracks)).toBe(1);
     }
   });
