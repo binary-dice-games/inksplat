@@ -13,41 +13,324 @@
     <link rel="icon" href="icon.png" />
     <!--{{style}}-->
     <style>
-      #panel input[type='text'] {
-        padding: 4px 6px;
+      /* The presenter controls: a column of groups that never scrolls sideways. */
+      #panel {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 300px;
+        max-height: calc(100% - 64px);
+        overflow: hidden auto;
+        overscroll-behavior: contain;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--panel);
+        color: var(--fg);
+        box-shadow: var(--shadow);
+        z-index: 20;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        align-content: start;
+        scrollbar-width: thin;
+      }
+      #panel > * {
+        min-width: 0;
+      }
+      #panel .panel-head {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 10px 10px 14px;
+        border-bottom: 1px solid var(--border);
+        background: var(--panel);
+      }
+      #panel .panel-head img {
+        width: 20px;
+        height: 20px;
+      }
+      #panel h2 {
+        flex: 1;
+        margin: 0;
+        font-size: 14px;
+        font-weight: 650;
+      }
+      #panel button {
+        padding: 5px 10px;
+        border-radius: 7px;
+        font-size: 13px;
+        white-space: nowrap;
+      }
+      #panel button.icon {
+        width: 28px;
+        height: 28px;
+        padding: 0;
+        border-color: transparent;
+        font-size: 18px;
+        line-height: 1;
+        color: var(--muted);
+      }
+      #panel button.icon:hover {
+        background: var(--soft);
+        color: var(--fg);
+      }
+      #panel button[aria-pressed='true'] {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      #panel .group {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--border);
+      }
+      #panel h3 {
+        margin: 0;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
       }
       #warning {
-        margin: 0;
+        margin: 10px 14px 0;
+        padding: 8px 10px;
+        border-radius: 8px;
+        background: rgba(196, 43, 49, 0.1);
         color: #c42b31;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+      @media (prefers-color-scheme: dark) {
+        #warning {
+          color: #ff8b8b;
+        }
       }
       #warning:empty {
         display: none;
       }
-      #panel h3 {
-        margin: 12px 0 4px;
+      .link-field {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        padding: 3px 3px 3px 10px;
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        background: var(--soft);
+      }
+      .link-field input {
+        flex: 1;
+        min-width: 0;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: var(--fg);
+        font:
+          12px/1.3 ui-monospace,
+          Consolas,
+          monospace;
+        text-overflow: ellipsis;
+      }
+      .link-field input:focus-visible {
+        outline: none;
+      }
+      .link-field:focus-within {
+        border-color: var(--accent);
+      }
+      #panel .pair {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+      }
+      #panel .pair input[type='file'] {
+        display: none;
+      }
+      #panel ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr);
+        gap: 4px;
+      }
+      #panel li {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        min-width: 0;
+        padding: 5px 6px;
+        border: 1px solid transparent;
+        border-radius: 9px;
+      }
+      #panel li:hover {
+        background: var(--soft);
+      }
+      #panel li .text {
+        flex: 1;
+        min-width: 0;
+        display: grid;
+      }
+      #panel li .name,
+      #panel li .meta {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #panel li .meta {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      #panel li button {
+        flex: none;
+        padding: 3px 8px;
+        font-size: 12px;
+      }
+      #viewers:empty::before {
+        content: 'Nobody has joined yet. Send them the link.';
+        color: var(--muted);
         font-size: 13px;
+      }
+      #viewers .avatar {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 50%;
+        color: #fff;
+        font-size: 12px;
+        font-weight: 650;
+        text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+      }
+      #viewers button {
+        border-color: transparent;
+        color: var(--muted);
+      }
+      #viewers button:hover {
+        border-color: #c42b31;
+        color: #c42b31;
+      }
+      #streams .swatch {
+        width: 10px;
+        height: 10px;
+        box-shadow: 0 0 0 1px var(--border);
+      }
+      #streams li.active {
+        border-color: var(--accent);
+        background: color-mix(in srgb, var(--accent) 10%, transparent);
       }
       #streams li.active .name {
         font-weight: 600;
       }
-      #streams button[aria-pressed='true'] {
-        background: var(--accent, #3e63dd);
-        color: #fff;
-      }
       #previewVideo {
         width: 100%;
-        margin-top: 6px;
+        aspect-ratio: 16 / 9;
         background: #000;
-        border-radius: 6px;
+        border-radius: 8px;
+      }
+      #panel .field label {
+        display: block;
+        margin: 0 0 4px;
+        font-size: 13px;
+      }
+      #panel select {
+        width: 100%;
+        padding: 6px 8px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+        color: inherit;
+        font: inherit;
+      }
+      /* Checkboxes drawn as switches, the label on the left. */
+      #panel label.switch {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        margin: 0;
+        cursor: pointer;
+      }
+      #panel label.switch input {
+        appearance: none;
+        position: relative;
+        flex: none;
+        width: 34px;
+        height: 20px;
+        margin: 0;
+        border-radius: 999px;
+        background: var(--border);
+        cursor: pointer;
+        transition: background-color 0.15s;
+      }
+      #panel label.switch input::before {
+        content: '';
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+        transition: transform 0.15s;
+      }
+      #panel label.switch input:checked {
+        background: var(--accent);
+      }
+      #panel label.switch input:checked::before {
+        transform: translateX(14px);
+      }
+      #panel label.switch input:focus-visible {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      #panel details {
+        margin: 0;
+      }
+      #panel summary {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      #panel details[open] summary {
+        margin-bottom: 6px;
+      }
+      #panel details p {
+        margin: 6px 0;
+      }
+      #panel textarea {
+        font-size: 11px;
+        resize: vertical;
+      }
+      #panel .panel-foot {
+        position: sticky;
+        bottom: 0;
+        display: flex;
+        gap: 6px;
+        padding: 10px 14px;
+        border-top: 1px solid var(--border);
+        margin-top: -1px;
+        background: var(--panel);
+      }
+      #panel .panel-foot .spacer {
+        flex: 1;
+      }
+      @media (max-width: 520px) {
+        #panel {
+          left: 8px;
+          right: 8px;
+          width: auto;
+        }
       }
       #shareStatus:empty {
         display: none;
       }
       #notice {
         color: rgba(255, 255, 255, 0.5);
-      }
-      #panel textarea {
-        font-size: 11px;
       }
       dialog {
         width: min(560px, calc(100% - 24px));
@@ -230,41 +513,69 @@
         </button>
       </div>
       <aside id="panel" aria-label="Presenter controls">
-        <h2>Presenter</h2>
+        <header class="panel-head">
+          <img src="icon.png" alt="" />
+          <h2>Presenter</h2>
+          <button
+            id="panelClose"
+            class="icon"
+            type="button"
+            aria-label="Hide the controls"
+            title="Hide the controls"
+          >
+            ×
+          </button>
+        </header>
         <p id="warning" role="status"></p>
-        <label for="link">Viewer link</label>
-        <div class="row">
-          <input id="link" type="text" readonly />
-          <button id="copyLink" type="button">Copy</button>
-          <button id="newLink" type="button">New link</button>
-          <button id="showQr" type="button">QR code</button>
-        </div>
-        <ul id="viewers" aria-label="Viewers"></ul>
-        <h3>Screen</h3>
-        <ul id="streams" aria-label="Streams on offer"></ul>
-        <video id="previewVideo" muted autoplay playsinline hidden aria-label="Preview"></video>
-        <p><button id="screenHere" type="button" hidden>Show the screen on this canvas</button></p>
-        <div id="backgroundRow" class="row">
-          <label id="backgroundLabel" for="background">Background of canvas 1</label>
-          <select id="background">
-            <option value="screen">Screen</option>
-            <option value="whiteboard">Whiteboard</option>
-            <option value="blackboard">Blackboard</option>
-            <option value="wall">Wall</option>
-            <option value="cork">Cork board</option>
-          </select>
-        </div>
-        <label><input id="drawing" type="checkbox" /> Viewers can draw</label>
-        <label><input id="lock" type="checkbox" /> Lock: no new viewers</label>
-        <div class="row">
-          <button id="clearDrawings" type="button">Clear drawings</button>
-          <button id="clear" type="button">Clear all</button>
-          <button id="saveBoard" type="button">Save…</button>
-          <button id="openBoard" type="button">Open…</button>
-          <input id="openFile" type="file" accept=".zip,application/zip" hidden />
-          <button id="settingsLive" type="button">Settings…</button>
-        </div>
-        <details>
+        <section class="group" aria-labelledby="inviteTitle">
+          <h3 id="inviteTitle">Invite</h3>
+          <label for="link" class="visually-hidden">Viewer link</label>
+          <div class="link-field">
+            <input id="link" type="text" readonly />
+            <button id="copyLink" class="primary" type="button">Copy</button>
+          </div>
+          <div class="pair">
+            <button id="newLink" type="button">New link</button>
+            <button id="showQr" type="button">QR code</button>
+          </div>
+        </section>
+        <section class="group" aria-labelledby="peopleTitle">
+          <h3 id="peopleTitle">People</h3>
+          <ul id="viewers" aria-label="Viewers"></ul>
+          <label class="switch"
+            ><span>Viewers can draw</span><input id="drawing" type="checkbox"
+          /></label>
+          <label class="switch"
+            ><span>Lock: no new viewers</span><input id="lock" type="checkbox"
+          /></label>
+        </section>
+        <section class="group" aria-labelledby="screenTitle">
+          <h3 id="screenTitle">Screen</h3>
+          <ul id="streams" aria-label="Streams on offer"></ul>
+          <video id="previewVideo" muted autoplay playsinline hidden aria-label="Preview"></video>
+          <button id="screenHere" type="button" hidden>Show the screen on this canvas</button>
+        </section>
+        <section class="group" aria-labelledby="boardTitle">
+          <h3 id="boardTitle">Board</h3>
+          <div id="backgroundRow" class="field">
+            <label id="backgroundLabel" for="background">Background of canvas 1</label>
+            <select id="background">
+              <option value="screen">Screen</option>
+              <option value="whiteboard">Whiteboard</option>
+              <option value="blackboard">Blackboard</option>
+              <option value="wall">Wall</option>
+              <option value="cork">Cork board</option>
+            </select>
+          </div>
+          <div class="pair">
+            <button id="clearDrawings" type="button">Clear drawings</button>
+            <button id="clear" type="button">Clear all</button>
+            <button id="saveBoard" type="button">Save…</button>
+            <button id="openBoard" type="button">Open…</button>
+            <input id="openFile" type="file" accept=".zip,application/zip" hidden />
+          </div>
+        </section>
+        <details class="group">
           <summary>Join codes</summary>
           <p class="muted">
             For a viewer whose network blocks the trackers: paste their code, send back the answer.
@@ -274,7 +585,11 @@
           <textarea id="answerCode" readonly rows="3" hidden aria-label="Answer code"></textarea>
           <p id="codeStatus" class="muted" role="status"></p>
         </details>
-        <div class="row"><button id="end" class="danger" type="button">End session</button></div>
+        <footer class="panel-foot">
+          <button id="settingsLive" type="button">Settings…</button>
+          <span class="spacer"></span>
+          <button id="end" class="danger" type="button">End session</button>
+        </footer>
       </aside>
       <div id="toast" role="status" hidden></div>
     </main>

@@ -72,7 +72,7 @@ describe('streams of anybody, picked by the presenter', () => {
     await expect.poll(() => presenter.locator('#toast').textContent()).toMatch(/Ana offers/);
     await expect.poll(() => presenter.locator('#streams li').count()).toBe(2);
     expect(await presenter.locator('#streams li').first().textContent()).toMatch(
-      /Ana: window 640×360/,
+      /Ana\s*window 640×360/,
     );
 
     // A preview: only the presenter sees it, and Ana knows.

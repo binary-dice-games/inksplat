@@ -32,7 +32,7 @@ afterAll(() => site?.close());
 const presenterPage = (surface?: string) => site.presenterPage(surface);
 const startSharing = (page: Awaited<ReturnType<PresenterSite['presenterPage']>>) =>
   site.startSharing(page);
-const joinViewer = (link: string) => site.joinViewer(link);
+const joinViewer = (link: string, name?: string) => site.joinViewer(link, name);
 
 describe('static presenter page', () => {
   it('is linked from the viewer page and shows the start screen', async () => {
@@ -1084,6 +1084,28 @@ describe('static presenter page', () => {
     // Back again.
     await presenter.locator('#toolsToggle').click();
     await expect.poll(() => toolbar.isVisible()).toBe(true);
+  });
+
+  it('keeps long names inside the controls, with no sideways scroll', async () => {
+    const presenter = await presenterPage();
+    const link = await startSharing(presenter);
+    const long = 'WWWWWWWWWW Featherstonehaugh-Worthington'.slice(0, 40);
+    await joinViewer(link, long);
+    await expect
+      .poll(() => presenter.locator('#people').textContent(), { timeout: 30000 })
+      .toBe('1 viewer');
+    const panel = presenter.locator('#panel');
+    await expect.poll(() => panel.locator('#viewers li').textContent()).toContain(long);
+    // The full name is in the tooltip; the row is cut with an ellipsis.
+    expect(await panel.locator('#viewers li .text').getAttribute('title')).toBe(long);
+    const overflow = await panel.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+
+    await presenter.locator('#panelClose').click();
+    await expect.poll(() => panel.isVisible()).toBe(false);
+    expect(await presenter.locator('#panelToggle').getAttribute('aria-expanded')).toBe('false');
+    await presenter.locator('#panelToggle').click();
+    await expect.poll(() => panel.isVisible()).toBe(true);
   });
 
   it('lays the settings out in tabs that fit without scrolling', async () => {
