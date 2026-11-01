@@ -18,7 +18,8 @@
  * nothing to them). The pointer tool has modes: the cursor, a laser that leaves a short trail and
  * emotes picked from a wheel that float away (`laser` and `emote` messages, never stored), and a
  * magnifier (a lens beside the pointer with a live copy of the adapter's `content()` and the
- * drawings, seen only here, clipped round by a clip-path). Bare pins
+ * drawings, seen only here, clipped round by a clip-path). The eraser draws the same dashed trail
+ * along its way as the cursor's sweep. Bare pins
  * and the pins of notes and pictures are drawn at half their size and catch the pointer as before.
  * New notes and pins are half the size nymph makes them, text sizes three
  * quarters, and the bar over a selected element is kept inside the board (and hidden while the
@@ -1561,6 +1562,7 @@ export class Whiteboard {
     this.selected = null;
     this.group = new Set(); // the ids of a selection of two or more items (then `selected` is null)
     this.sweeping = null; // the drag over the board that selects what it passes over
+    this.eraseTrail = null; // the eraser's way while it is held, drawn as the sweep is
     this.groupDrag = null; // the selection being moved
     this.clipboard = null; // what was copied here last: {key, blobs} (the items go on the system clipboard)
     this.spaceHeld = false; // Space held: a drag on the board pans it (when zoomed in)
@@ -4348,6 +4350,7 @@ export class Whiteboard {
       this.drawing.node.setAttribute('d', inkPath(this.drawing.points));
     } else if (this.tool === 'eraser') {
       this.erasing = new Set();
+      this.eraseTrail = { points: [round1(p.x), round1(p.y)], node: null };
       this.eraseAt(ev);
     } else if (this.tool === 'text') {
       this.pendingText = p;
@@ -4392,6 +4395,7 @@ export class Whiteboard {
       }
     } else if (this.erasing) {
       this.eraseAt(ev);
+      this.extendEraseTrail(ev);
     } else if (this.threading) {
       this.dragThread(ev);
     } else if (this.dragging) {
@@ -5018,6 +5022,8 @@ export class Whiteboard {
     } else if (this.erasing) {
       const ids = [...this.erasing];
       this.erasing = null;
+      this.eraseTrail?.node?.remove();
+      this.eraseTrail = null;
       for (const id of ids) {
         this.nodes.get(id)?.node.classList.remove('erasing');
         if (!cancelled) {
@@ -5478,6 +5484,26 @@ export class Whiteboard {
       this.erasing.add(hit.id);
       this.nodes.get(hit.id)?.node.classList.add('erasing');
     }
+  }
+
+  /** @private The eraser's way is drawn as the cursor's sweep is, from its first move until it is let go. */
+  extendEraseTrail(ev) {
+    const t = this.eraseTrail;
+    if (!t) {
+      return;
+    }
+    const p = this.eventPoint(ev);
+    const x = round1(p.x);
+    const y = round1(p.y);
+    if (x === t.points[t.points.length - 2] && y === t.points[t.points.length - 1]) {
+      return;
+    }
+    t.points.push(x, y);
+    if (!t.node) {
+      t.node = svgEl('path', { class: 'sweep', 'vector-effect': 'non-scaling-stroke' });
+      this.liveGroup.append(t.node);
+    }
+    t.node.setAttribute('d', inkPath(t.points));
   }
 
   /** @private A text box over the note being written (a new one at `at`). */

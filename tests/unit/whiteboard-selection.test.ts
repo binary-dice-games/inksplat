@@ -146,6 +146,33 @@ describe('selecting several items', () => {
     }
   });
 
+  it('draws the same trail along the way of the eraser while it is held', async () => {
+    const t = await mount();
+    try {
+      t.wb.load(snapshot([sticker(t.me, 1, 100, 100), sticker(t.me, 2, 300, 300)]));
+      t.wb.setTool('eraser');
+      // A click marks what is under it and draws no trail.
+      pointer(t.board, 'pointerdown', 300, 300);
+      expect(t.root.querySelector('.sweep')).toBeNull();
+      pointer(t.board, 'pointerup', 300, 300);
+      expect(t.get(`${t.me}.2`)).toBeUndefined();
+
+      // A drag draws the trail as it goes, and it goes on letting go.
+      pointer(t.board, 'pointerdown', 40, 100);
+      pointer(t.board, 'pointermove', 100, 100);
+      const trail = t.root.querySelector('.sweep');
+      expect(trail).not.toBeNull();
+      expect(t.root.querySelector(`[data-id="${t.me}.1"]`)!.classList).toContain('erasing');
+      pointer(t.board, 'pointermove', 160, 120);
+      expect(trail!.getAttribute('d')).toContain('160');
+      pointer(t.board, 'pointerup', 160, 120);
+      expect(t.root.querySelector('.sweep')).toBeNull();
+      expect(t.get(`${t.me}.1`)).toBeUndefined();
+    } finally {
+      t.done();
+    }
+  });
+
   it('leaves the other tools and touch alone, and pans with Space+drag when zoomed in', async () => {
     const pans: number[][] = [];
     const t = await mount({
