@@ -216,6 +216,18 @@ describe('the magnifier', () => {
       const view = lens.querySelector<HTMLElement>('.view')!;
       expect(view.style.transform).toBe('translate(-893px, -643px) scale(2.5)');
 
+      // A zoom of the content moves the copy instead of making it again (with its videos).
+      content.style.transformOrigin = '0 0';
+      content.style.transform = 'translate(-40px, -20px) scale(2)';
+      move(400, 300);
+      expect(lens.querySelector('.view > div')).toBe(copy.parentElement);
+      expect(copy.parentElement!.style.transform).toBe('translate(-40px, -20px) scale(2)');
+      // Another background does make it again.
+      picture.style.background = 'rgb(4, 5, 6)';
+      move(400, 300);
+      expect(lens.querySelector('.view > div')).not.toBe(copy.parentElement);
+      content.style.transform = '';
+
       // Near the top right corner it goes down and to the left.
       move(750, 20);
       expect(lens.style.transform).toBe('translate(510px, 40px)');
@@ -230,7 +242,7 @@ describe('the magnifier', () => {
       stage.dispatchEvent(wheel);
       expect(wheel.defaultPrevented).toBe(true);
       expect(zoomed).toBe(0);
-      expect(view.style.transform).toContain('scale(3)');
+      expect(lens.querySelector<HTMLElement>('.view')!.style.transform).toContain('scale(3)');
 
       // It goes when the pointer leaves, and with another mode.
       stage.dispatchEvent(new MouseEvent('pointerleave'));

@@ -16,6 +16,7 @@ inksplat_add_test(whiteboard_pointer_modes tests/unit/whiteboard-pointer-modes.t
 inksplat_add_test(whiteboard_selection tests/unit/whiteboard-selection.test.ts)
 inksplat_add_test(whiteboard_tool_hints tests/unit/whiteboard-tool-hints.test.ts)
 inksplat_add_test(sheet tests/unit/sheet.test.ts)
+inksplat_add_test(zoom_layer tests/unit/zoom-layer.test.ts)
 inksplat_add_test(save tests/unit/save.test.ts)
 inksplat_add_test(backup tests/unit/backup.test.ts)
 inksplat_add_test(board_archive tests/unit/board-archive.test.ts)

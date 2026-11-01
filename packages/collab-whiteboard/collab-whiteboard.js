@@ -18,7 +18,8 @@
  * nothing to them). The pointer tool has modes: the cursor, a laser that leaves a short trail and
  * emotes picked from a wheel that float away (`laser` and `emote` messages, never stored), and a
  * magnifier (a lens beside the pointer with a live copy of the adapter's `content()` and the
- * drawings, seen only here, clipped round by a clip-path). The eraser draws the same dashed trail
+ * drawings, seen only here, clipped round by a clip-path; a zoom or pan only moves its copy of the
+ * content, which is made again only when the content changes). The eraser draws the same dashed trail
  * along its way as the cursor's sweep. Bare pins
  * and the pins of notes and pictures are drawn at half their size and catch the pointer as before.
  * New notes and pins are half the size nymph makes them, text sizes three
@@ -1546,6 +1547,7 @@ export class Whiteboard {
     this.emoteWheel = null; // the emote wheel while it is open
     this.lensPower = 2.5;
     this.lensSig = ''; // what the copy of the content in the lens was made from
+    this.lensCopy = null; // that copy
     // The pointer is in hand without its key or button (at the start, after a note was put down,
     // Esc...): the next press of its key only confirms it instead of going to the next mode.
     this.pointerUnchosen = true;
@@ -3708,6 +3710,7 @@ export class Whiteboard {
         this.lens.hidden = true;
         this.lens.replaceChildren();
         this.lensSig = '';
+        this.lensCopy = null;
       }
       return;
     }
@@ -3729,20 +3732,36 @@ export class Whiteboard {
     this.lens.hidden = false;
   }
 
-  /** @private (Re)makes the copy of the content in the lens when the content changed (background, stream, zoom). */
+  /**
+   * @private (Re)makes the copy of the content in the lens when the content changed (background,
+   * stream). A zoom or a pan only moves the copy: its transform follows the content's, so the copy
+   * (and the video in it) is not made again at every step.
+   */
   syncLensContent(w, h) {
     const content = this.adapter.content?.() ?? null;
     const parts = content ? [content, ...content.querySelectorAll('*')] : [];
-    const sig = `${w}x${h}|${parts.map((el) => `${el.hidden}:${el.getAttribute('style') ?? ''}:${el.srcObject?.id ?? el.currentSrc ?? ''}`).join('|')}`;
-    if (sig === this.lensSig) {
-      return;
+    // The content's own transform (the zoom) is left out: it is set on the copy below.
+    const styleOf = (el) => (el === content ? Array.from({ length: el.style.length }, (_, i) => el.style.item(i)).filter((p) => !p.startsWith('transform')).map((p) => `${p}:${el.style.getPropertyValue(p)}`).join(';') : (el.getAttribute('style') ?? ''));
+    const sig = `${w}x${h}|${parts.map((el) => `${el.hidden}:${styleOf(el)}:${el.srcObject?.id ?? el.currentSrc ?? ''}`).join('|')}`;
+    if (sig !== this.lensSig) {
+      this.lensSig = sig;
+      this.makeLensContent(content, w, h);
     }
-    this.lensSig = sig;
+    if (content && this.lensCopy) {
+      const cs = getComputedStyle(content);
+      this.lensCopy.style.transform = cs.transform;
+      this.lensCopy.style.transformOrigin = cs.transformOrigin;
+    }
+  }
+
+  /** @private Makes the lens's copy of `content` (null: none) and of the drawings, `w` by `h`. */
+  makeLensContent(content, w, h) {
     const view = htmlEl('div', { class: 'view' });
     view.style.width = `${w}px`;
     view.style.height = `${h}px`;
-    if (content) {
-      view.append(copyLive(content));
+    this.lensCopy = content ? copyLive(content) : null;
+    if (this.lensCopy) {
+      view.append(this.lensCopy);
     }
     const svg = svgEl('svg');
     svg.append(svgEl('use', { href: '#wb-layer' }));

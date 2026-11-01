@@ -173,6 +173,29 @@ describe('static presenter page', () => {
     await presenter.locator('#background').selectOption('cork');
     await expect.poll(() => frame(viewer), { timeout: 15000 }).toBe('rgb(139, 94, 52)');
     await expect.poll(() => frame(presenter)).toBe('rgb(139, 94, 52)');
+    // Its textures are drawn once into bitmaps (at twice their size), which the page's CSP lets in.
+    await expect
+      .poll(() =>
+        viewer
+          .locator('#page')
+          .evaluate((e) => (getComputedStyle(e).backgroundImage.match(/blob:/g) ?? []).length),
+      )
+      .toBe(4);
+    const tiles = await viewer.locator('#page').evaluate(async (e) => {
+      const urls = [...getComputedStyle(e).backgroundImage.matchAll(/url\("(blob:[^"]+)"\)/g)];
+      return Promise.all(
+        urls.map(async ([, url]) => {
+          const image = new Image();
+          image.src = url!;
+          await image.decode();
+          return image.naturalWidth;
+        }),
+      );
+    });
+    expect(tiles).toEqual([600, 600, 1000, 600]);
+    expect(await viewer.locator('#page').evaluate((e) => getComputedStyle(e).backgroundSize)).toBe(
+      '300px 300px, 300px 300px, 500px 500px, 300px 300px, auto',
+    );
 
     // Files dropped on the presenter's board: a text file, a real picture, a binary one.
     await presenter.evaluate(async () => {

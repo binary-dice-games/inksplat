@@ -166,8 +166,15 @@ is refused with a message.
 false})`, no `setMedia`, and the `stage` message says `video: false`. Both pages then hide the
 `<video>` and show a sheet of the stage's aspect (16:9 unless a capture said
 otherwise), letterboxed in the window, with that background (`viewer/src/sheet.ts`: CSS gradients
-and inline SVG noise and lighting filters, no image files; the wall and cork multiply a lit rough surface over their colour). The `<video>` and the sheet sit in one `#zoom` element,
-which is what the wheel zooms, so the drawings stay on the sheet. Pause, Share again and the
+and inline SVG noise and lighting filters, no image files; the wall and cork multiply a lit rough surface over their colour).
+On the page each SVG tile is drawn once into a bitmap (at twice the screen's scale, at most 4)
+and the sheet uses those: redrawing the filters at the zoomed size took hundreds of milliseconds
+per zoom step on a 4K screen, and more in the magnifier's lens. Saved pictures keep the SVG tiles.
+The `<video>` and the sheet sit in one `#zoom` element,
+which is what the wheel zooms, so the drawings stay on the sheet. While it is zoomed or panned
+`#zoom` is a GPU layer of its own (`will-change: transform`, `viewer/src/zoom-layer.ts`), so the
+steps only scale what was drawn; 250 ms after the last step the layer goes and the sheet is drawn
+once, sharp, at its final size. Pause, Share again and the
 video limits do not apply; adding video to a running board is not supported.
 
 ### Backgrounds per canvas

@@ -103,6 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Zooming, panning and the magnifier no longer slow down badly on large (4K) screens, notably over the wall, cork and whiteboard backgrounds.
 - The magnifier's lens is clipped round: a square of the enlarged screen no longer shows around it.
 - Stickers can be selected, moved and erased by touching anywhere on them, not only their lines (they were often missed, notably on iPad).
 

@@ -31,6 +31,7 @@ import { setToolbarFolded } from './fold';
 import { filePreview } from './previews';
 import { showSheet } from './sheet';
 import { wireSave } from './save';
+import { layerWhileMoving } from './zoom-layer';
 import { ownerStatus, playIn, statusText, wireShareButton } from './share-button';
 import type { ShareButton } from './share-button';
 import type { DisplayCapture } from './display-capture';
@@ -74,6 +75,8 @@ const logger = (...args: unknown[]): void => console.log('[inksplat]', ...args);
 let session: Session | null = null;
 let board: Whiteboard | null = null;
 let adapter: FrameAdapter | null = null;
+/** Stops keeping the zoomed content on a layer of its own while it moves. */
+let unlayer: (() => void) | null = null;
 let stage: Stage | null = null;
 let hasVideo = false;
 /** The host's video (the active stream of somebody else). */
@@ -180,6 +183,7 @@ function enterApp(): void {
   const stageEl = $('stage');
   const v = video();
   adapter = frameAdapter(stageEl, () => boardAspect(stage), $('zoom'));
+  unlayer = layerWhileMoving($('zoom'), adapter);
   board = createWhiteboard(stageEl, {
     session,
     adapter,
@@ -203,6 +207,8 @@ function endSession(message: string): void {
   share?.stop();
   board?.destroy();
   board = null;
+  unlayer?.();
+  unlayer = null;
   adapter = null;
   $('waitTitle').textContent = 'Session over';
   $('waitText').textContent = message;
