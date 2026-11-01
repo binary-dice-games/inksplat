@@ -18,7 +18,7 @@
  * nothing to them). The pointer tool has modes: the cursor, a laser that leaves a short trail and
  * emotes picked from a wheel that float away (`laser` and `emote` messages, never stored), and a
  * magnifier (a lens beside the pointer with a live copy of the adapter's `content()` and the
- * drawings, seen only here). Bare pins
+ * drawings, seen only here, clipped round by a clip-path). Bare pins
  * and the pins of notes and pictures are drawn at half their size and catch the pointer as before.
  * New notes and pins are half the size nymph makes them, text sizes three
  * quarters, and the bar over a selected element is kept inside the board (and hidden while the
@@ -1309,6 +1309,7 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .lens { position: absolute; left: 0; top: 0; box-sizing: border-box; overflow: hidden; border-radius: 50%; pointer-events: none; background: #ffffff;
   border: 3px solid var(--wb-fg); box-shadow: 0 4px 18px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.6); }
 .lens[hidden] { display: none; }
+.lens .glass { position: absolute; inset: 0; overflow: hidden; border-radius: 50%; clip-path: circle(50%); }
 .lens .view { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .lens .view > svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
 .lens .aim { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; }
@@ -3745,7 +3746,11 @@ export class Whiteboard {
     svg.append(svgEl('use', { href: '#wb-layer' }));
     const aim = htmlEl('div', { class: 'aim' }, '<svg viewBox="0 0 14 14" width="14" height="14"><path d="M7 0v5M7 9v5M0 7h5M9 7h5" stroke="#1c2024" stroke-width="1.4"/><path d="M7 1v3.5M7 9.5V13M1 7h3.5M9.5 7H13" stroke="#fff" stroke-width="0.6"/></svg>');
     view.append(svg);
-    this.lens.replaceChildren(view, aim);
+    // The round clip is on a layer of its own: Chromium leaves the composited copy (scaled, with
+    // videos) square under the lens's border-radius alone, so it needs the clip-path.
+    const glass = htmlEl('div', { class: 'glass' });
+    glass.append(view, aim);
+    this.lens.replaceChildren(glass);
   }
 
   // ── Laser and emotes ────────────────────────────────────────────────────

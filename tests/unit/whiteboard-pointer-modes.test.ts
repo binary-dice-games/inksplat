@@ -203,6 +203,13 @@ describe('the magnifier', () => {
       expect(copy.id).toBe('');
       expect(copy.style.getPropertyValue('background-color')).toBe('rgb(1, 2, 3)');
       expect(lens.querySelector('use')?.getAttribute('href')).toBe('#wb-layer');
+      // Clipped round by a clip-path on an inner layer (border-radius alone left the copy square).
+      const glass = lens.querySelector<HTMLElement>(':scope > .glass')!;
+      expect(glass.querySelector(':scope > .view')).not.toBeNull();
+      expect(glass.querySelector(':scope > .aim')).not.toBeNull();
+      expect(root.querySelector('style')?.textContent).toMatch(
+        /\.lens \.glass \{[^}]*clip-path: circle\(50%\)/,
+      );
       expect(root.querySelector('#wb-layer .pin-item')).not.toBeNull();
       // Up and to the right of the pointer, enlarged 2.5 times about it.
       expect(lens.style.transform).toBe('translate(420px, 60px)');
