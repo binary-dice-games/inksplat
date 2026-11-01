@@ -216,7 +216,9 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   box over each print (an SVG image cannot be dragged) whose `dragstart` puts the file on the
   drag as a `File` (pages and apps) and as `DownloadURL` (desktop and folders, Chromium);
   double click saves it. Your own prints are moved, not copied. The prints are drawn with a
-  border, a drop shadow (a filter on an unrotated wrapper so the light stays put) and a pin.
+  border, a shadow and a pin. The shadow is a copy of the paper's shape in see-through black,
+  offset down and to the right outside the turn so the light stays put; it is not blurred, because
+  an SVG blur filter was drawn again at every zoom step and made zooming slow on large screens.
   Past the size limit a picture is still shared, as a preview only; any other file is refused.
 - **Sticky notes.** A `note` item is `{x, y, size (width), ratio, text, color (its paper), rot?}`; text up
   to `LIMITS.text`, may be empty. Made with tool 6 (`addNote`); the paper is a pale mix of the

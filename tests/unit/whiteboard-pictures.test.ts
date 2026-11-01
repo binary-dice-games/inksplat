@@ -202,9 +202,12 @@ describe('pictures on the board', () => {
       await until(() => imageOf(p.hostBoard, id), 'item');
       const item = p.hostBoard.element.shadowRoot!.querySelector(`.item[data-id="${id}"]`)!;
       expect(item.querySelector('.paper')).toBeNull(); // no white rectangle
-      expect(item.querySelector('g[filter="url(#wb-shadow)"]')).not.toBeNull();
+      expect(item.querySelector('g.shadow')).toBeNull(); // its shadow is in its filter
       const filter = item.querySelector(`filter[id="wb-cut-${id}"]`)!;
       expect(filter).not.toBeNull();
+      // The shadow: the bordered shape moved and filled, not blurred.
+      expect(filter.querySelector('feOffset')?.getAttribute('in')).toBe('grown');
+      expect(filter.querySelector('feMergeNode')?.getAttribute('in')).toBe('shade');
       expect(filter.querySelectorAll('feMorphology')).toHaveLength(2);
       expect(filter.querySelector('.cut-edge')).not.toBeNull();
       expect(imageOf(p.hostBoard, id)?.getAttribute('filter')).toBe(`url(#wb-cut-${id})`);

@@ -237,8 +237,13 @@ describe('the pin and thread tools', () => {
       // Drawn as a hanging thread with a head, and with the shadow of the other pinned things.
       const drawn = t.root.querySelector('.arrow-item')!;
       expect(drawn.querySelector('path.paper')?.getAttribute('d')).toMatch(/^M[\d.]+ [\d.]+Q/);
-      expect(drawn.querySelectorAll('polygon')).toHaveLength(1);
-      expect(drawn.querySelector('g')?.getAttribute('filter')).toBe('url(#wb-shadow)');
+      expect(drawn.querySelectorAll('g:not(.shadow) > polygon')).toHaveLength(1);
+      // Its shadow is a copy of it (thread and head), with no filter.
+      expect(drawn.querySelectorAll('g.shadow > polygon')).toHaveLength(1);
+      expect(drawn.querySelector('g.shadow > path')?.getAttribute('d')).toBe(
+        drawn.querySelector('path.paper')?.getAttribute('d'),
+      );
+      expect(drawn.querySelector('[filter]')).toBeNull();
       // Not to itself.
       pointer(t.board, 'pointerdown', 100, 100);
       pointer(t.board, 'pointerup', 101, 101);
@@ -456,11 +461,11 @@ describe('selecting a note or a thread', () => {
         buttons(t.root).find((x) => x.getAttribute('aria-label') === name)!;
       head('Heads at both ends').click();
       expect(t.wb.items()[2]).toMatchObject({ kind: 'arrow', heads: 'both' });
-      expect(t.root.querySelectorAll('.arrow-item polygon')).toHaveLength(2);
+      expect(t.root.querySelectorAll('.arrow-item g:not(.shadow) > polygon')).toHaveLength(2);
       head('No heads').click();
-      expect(t.root.querySelectorAll('.arrow-item polygon')).toHaveLength(0);
+      expect(t.root.querySelectorAll('.arrow-item g:not(.shadow) > polygon')).toHaveLength(0);
       head('Head at the source').click();
-      expect(t.root.querySelectorAll('.arrow-item polygon')).toHaveLength(1);
+      expect(t.root.querySelectorAll('.arrow-item g:not(.shadow) > polygon')).toHaveLength(1);
     } finally {
       t.wb.destroy();
       t.room.close();

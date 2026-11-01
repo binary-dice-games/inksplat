@@ -193,12 +193,20 @@ describe('files pinned on the board', () => {
       await p.anaBoard.addFile(new File(['x'], 'a.txt', { type: 'text/plain' }));
       await until(() => p.benBoard.element.shadowRoot!.querySelector('.item.image-item'), 'item');
       const item = p.benBoard.element.shadowRoot!.querySelector('.item.image-item')!;
-      expect(item.querySelector('g[filter="url(#wb-shadow)"]')).not.toBeNull();
-      expect(item.querySelector('rect')?.getAttribute('fill')).toBe('#ffffff');
+      expect(item.querySelector('rect.paper')?.getAttribute('fill')).toBe('#ffffff');
+      // The shadow: the same shape in see-through black under it, offset, with no filter (a blur
+      // was drawn again at every step of a zoom).
+      const shadow = item.querySelector<SVGGElement>('g.shadow')!;
+      expect(shadow.getAttribute('transform')).toBe('translate(1.5 3)');
+      expect(shadow.querySelector('rect')?.getAttribute('fill')).toBe('rgba(0,0,0,0.2)');
+      expect(shadow.compareDocumentPosition(item.querySelector('rect.paper')!)).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+      expect(item.querySelector('[filter]')).toBeNull();
       expect(item.querySelectorAll('.pin circle')).toHaveLength(3); // what catches the pointer, the pin, its highlight
       expect(item.querySelector('ellipse')).not.toBeNull(); // the shadow of the pin
-      expect(p.benBoard.element.shadowRoot!.querySelector('filter#wb-shadow')).not.toBeNull();
-      expect(p.benBoard.toSvg()).toContain('wb-shadow');
+      expect(p.benBoard.element.shadowRoot!.querySelector('filter#wb-shadow')).toBeNull();
+      expect(p.benBoard.toSvg()).toContain('class="shadow"');
     } finally {
       p.done();
     }

@@ -233,7 +233,7 @@ describe('static presenter page', () => {
       .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('href')?.slice(0, 22)));
     expect(hrefs.every((h) => h?.startsWith('data:image/'))).toBe(true);
     expect(await viewer.locator('collab-whiteboard .item.image-item .pin circle').count()).toBe(9); // each: what catches the pointer, the pin, its highlight
-    expect(await viewer.locator('collab-whiteboard .item.image-item g[filter]').count()).toBe(3);
+    expect(await viewer.locator('collab-whiteboard .item.image-item g.shadow').count()).toBe(3);
 
     // The viewer drags a copy of the text file out: once it has arrived, the drag carries it.
     const dragOut = (name: string) =>
@@ -507,8 +507,8 @@ describe('static presenter page', () => {
     await presenter.mouse.up();
     const threads = viewer.locator('collab-whiteboard .arrow-item');
     await expect.poll(() => threads.count(), { timeout: 30000 }).toBe(2);
-    expect(await threads.nth(0).locator('polygon').count()).toBe(1);
-    expect(await threads.nth(1).locator('polygon').count()).toBe(2);
+    expect(await threads.nth(0).locator('g:not(.shadow) > polygon').count()).toBe(1);
+    expect(await threads.nth(1).locator('g:not(.shadow) > polygon').count()).toBe(2);
   });
 
   it('saves the board as a picture, a drawing and a board file that another session opens', async () => {
