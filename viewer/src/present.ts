@@ -272,6 +272,7 @@ function enterApp(): void {
     readOnly: false,
     avatar: settings?.avatar,
     filePreview,
+    toolHints: prefs.toolHints,
   });
   board.on('error', (e) => toast(e.message));
   board.on('page', render);
@@ -421,6 +422,7 @@ function fillSettings(p: PresenterPrefs): void {
   input('color').value = s.color;
   input('viewersMayDraw').checked = s.viewersMayDraw;
   $<HTMLSelectElement>('cursor').value = p.cursor;
+  input('toolHints').checked = p.toolHints;
   input('fps').value = String(s.video.fps);
   input('maxWidth').value = String(s.video.maxWidth);
   input('maxHeight').value = String(s.video.maxHeight);
@@ -437,6 +439,7 @@ function readSettings(): PresenterPrefs {
   return cleanPrefs({
     ...prefs,
     cursor: $<HTMLSelectElement>('cursor').value,
+    toolHints: input('toolHints').checked,
     settings: {
       name: input('name').value,
       color: input('color').value,
@@ -487,6 +490,7 @@ function saveSettings(): void {
   prefs = readSettings();
   savePrefs(prefs);
   summary();
+  board?.setToolHints(prefs.toolHints);
   if (host && settings) {
     settings = { ...settings, video: prefs.settings.video, avatar: prefs.settings.avatar };
     board?.setAvatar(prefs.settings.avatar);

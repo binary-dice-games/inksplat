@@ -381,8 +381,13 @@ export interface WhiteboardOptions {
   readOnly?: boolean;
   /** Show the buttons that choose the canvas; default true. */
   pages?: boolean;
-  /** Show a faint line under the canvases on how to use the tool in hand; default true. */
+  /**
+   * Show a faint line under the canvases on how to use the tool in hand, for a few seconds after
+   * the tool, the pointer's mode or the selection changes; default true.
+   */
   toolHints?: boolean;
+  /** How long the tool hint stays, in milliseconds; default 3500. */
+  toolHintMs?: number;
   /** This person's avatar (an image data URL), shown on their cursor instead of their name. */
   avatar?: string;
   /** Show the speaking queue; default true. */
@@ -484,6 +489,10 @@ export class Whiteboard {
   currentPage(): number;
   /** Shows another canvas, only for this person; the others are told where they are. */
   setPage(n: number): void;
+  /** Shows (the default) or never shows the hint on how to use the tool in hand. */
+  setToolHints(on: boolean): void;
+  /** Whether the tool hint is shown when the tool changes. */
+  readonly toolHintsShown: boolean;
   /** People (this one included) on each canvas. */
   pageCounts(): number[];
   snapshot(): Snapshot;

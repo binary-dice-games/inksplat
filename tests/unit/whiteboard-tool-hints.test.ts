@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { createWhiteboard } from '@inksplat/collab-whiteboard';
 import { setToolbarFolded } from '../../viewer/src/fold';
 import { TestRoom } from '../support/rooms';
+import { until } from '../support/wait';
 
 function box(width: number, height: number): HTMLElement {
   const el = document.createElement('div');
@@ -34,39 +35,44 @@ async function mount(options: object = {}) {
   const host = await room.start();
   const wb = createWhiteboard(box(800, 450), { session: host, adapter: identity, ...options });
   const tip = wb.element.shadowRoot!.querySelector<HTMLElement>('.tip')!;
+  /** The hint text while it is shown, else ''. */
+  const shown = () => (tip.classList.contains('on') && !tip.hidden ? tip.textContent : '');
   const done = () => {
     wb.destroy();
     room.close();
   };
-  return { me: host.me.id, wb, tip, done };
+  return { me: host.me.id, wb, tip, shown, done };
 }
 
 describe('tool hints', () => {
-  it('follow the tool in hand, the pointer mode and its number', async () => {
-    const t = await mount();
+  it('show for a moment when the tool or the pointer mode changes, with its number', async () => {
+    const t = await mount({ toolHintMs: 60 });
     try {
-      expect(t.tip.hidden).toBe(false);
-      expect(t.tip.textContent).toContain('Drag from an empty place to select');
-      expect(t.tip.textContent).toContain('Press 1 again');
+      expect(t.shown()).toBe(''); // not at the start
 
       t.wb.setTool('pen');
-      expect(t.tip.textContent).toBe('Drag to draw · Press 2 again for another width');
+      expect(t.shown()).toBe('Drag to draw · Press 2 again for another width');
+      await until(() => t.shown() === '', 'the hint goes after a moment');
+
+      t.wb.setStyle({ color: '#e5484d' }); // the same tool: nothing shows
+      expect(t.shown()).toBe('');
       t.wb.setTool('note');
-      expect(t.tip.textContent).toContain('Press 6 again for another shape');
+      expect(t.shown()).toContain('Press 6 again for another shape');
       t.wb.setTool('arrow');
-      expect(t.tip.textContent).toContain('Drag from a pin to another');
+      expect(t.shown()).toContain('Drag from a pin to another');
 
       t.wb.setTool('pointer');
+      expect(t.shown()).toContain('Press 1 again for the laser');
       t.wb.setStyle({ pointerMode: 'laser' });
-      expect(t.tip.textContent).toContain('trail that fades');
+      expect(t.shown()).toContain('trail that fades');
       t.wb.setStyle({ pointerMode: 'magnify' });
-      expect(t.tip.textContent).toContain('The wheel');
+      expect(t.shown()).toContain('The wheel');
     } finally {
       t.done();
     }
   });
 
-  it('say how to handle a selection, and go while drawing is locked', async () => {
+  it('say how to handle a selection, and go when it is let go or drawing is locked', async () => {
     const t = await mount();
     try {
       t.wb.load({
@@ -76,36 +82,45 @@ describe('tool hints', () => {
         items: [sticker(t.me, 1, 100), sticker(t.me, 2, 200)],
       });
       t.wb.selectItems([`${t.me}.1`]);
-      expect(t.tip.textContent).toContain('Delete removes it');
+      expect(t.shown()).toContain('Delete removes it');
       t.wb.selectItems([`${t.me}.1`, `${t.me}.2`]);
-      expect(t.tip.textContent).toContain('move them all');
+      expect(t.shown()).toContain('move them all');
       t.wb.selectItems([]);
-      expect(t.tip.textContent).toContain('Drag from an empty place');
+      expect(t.shown()).toBe('');
 
-      t.wb.readOnly = true;
-      expect(t.tip.textContent).toBe('');
-      t.wb.readOnly = false;
       t.wb.setTool('pin');
-      expect(t.tip.textContent).toContain('Click to put a pin down');
+      expect(t.shown()).toContain('Click to put a pin down');
+      t.wb.readOnly = true;
+      expect(t.shown()).toBe('');
     } finally {
       t.done();
     }
   });
 
-  it('can be translated, turned off, and fold away with the toolbar', async () => {
-    const t = await mount({ strings: { toolHints: { cursor: 'Hola ({key})' } } });
+  it('can be translated, turned off and on, and fold away with the toolbar', async () => {
+    const t = await mount({ strings: { toolHints: { pen: 'Dibuja ({key})' } } });
     try {
-      expect(t.tip.textContent).toBe('Hola (1)');
+      t.wb.setTool('pen');
+      expect(t.shown()).toBe('Dibuja (2)');
       setToolbarFolded(t.wb, true);
       expect(t.tip.style.display).toBe('none');
       setToolbarFolded(t.wb, false);
       expect(t.tip.style.display).toBe('');
+
+      t.wb.setToolHints(false);
+      expect(t.wb.toolHintsShown).toBe(false);
+      t.wb.setTool('pen');
+      expect(t.shown()).toBe('');
+      t.wb.setToolHints(true);
+      t.wb.setTool('eraser');
+      expect(t.shown()).toContain('Drag over what to remove');
     } finally {
       t.done();
     }
     const off = await mount({ toolHints: false });
     try {
-      expect(off.tip.hidden).toBe(true);
+      off.wb.setTool('pen');
+      expect(off.shown()).toBe('');
     } finally {
       off.done();
     }

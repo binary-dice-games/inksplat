@@ -29,7 +29,8 @@
  * zips, with the files apart from the JSON). A drag of the pointer from an empty place selects
  * several items, which are moved, coloured, removed, copied, cut and pasted together; zoomed in, a
  * mouse drag there pans only with Space held. A faint line under the canvases says how to use the
- * tool in hand (or the selection); `toolHints: false` leaves it out.
+ * tool in hand (or the selection) for a few seconds after it changes; `toolHints: false` or
+ * `setToolHints(false)` leaves it out.
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -1354,6 +1355,8 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .hint[hidden] { display: none; }
 .tip { position: absolute; left: 50%; transform: translateX(-50%); max-width: min(720px, calc(100% - 120px)); padding: 2px 10px; border-radius: 999px; box-sizing: border-box;
   background: color-mix(in srgb, var(--wb-bg) 55%, transparent); color: color-mix(in srgb, var(--wb-fg) 75%, transparent); font-size: 12px; text-align: center; pointer-events: none; user-select: none; }
+.tip { opacity: 0; visibility: hidden; transition: opacity .4s, visibility 0s .4s; }
+.tip.on { opacity: 1; visibility: visible; transition: opacity .15s; }
 .tip[hidden], .tip:empty { display: none; }
 @media (max-width: 520px) { .tip { display: none; } }
 .pages { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 4px 10px; border-radius: 999px; background: var(--wb-bg); color: var(--wb-fg); box-shadow: 0 1px 6px rgba(0,0,0,.35); pointer-events: auto; }
@@ -1504,6 +1507,7 @@ export class Whiteboard {
     this.container = container;
     this.session = options.session;
     this.strings = { ...STRINGS, ...(options.strings ?? {}) };
+    this.strings.toolHints = { ...STRINGS.toolHints, ...(options.strings?.toolHints ?? {}) }; // a host may translate only some
     this.tools = (options.tools ?? ['pointer', 'pen', 'text', 'sticker', 'eraser', 'note', 'pin', 'arrow']).filter((t) => t in ICONS);
     if (!this.tools.includes('pointer')) {
       this.tools.unshift('pointer');
@@ -1527,6 +1531,8 @@ export class Whiteboard {
     this.pages = new Map(); // peer id -> the canvas they are on (absent: the first)
     this.showPages = options.pages !== false;
     this.toolHints = options.toolHints !== false;
+    this.toolHintMs = finite(options.toolHintMs, 0, 60000) ? options.toolHintMs : 3500;
+    this.tipKey = 'cursor'; // what the hint was last about; the hint shows when it changes
     this.cleanups = [];
     this.lastCursorSent = 0;
     this.lastPoint = null;
@@ -2344,6 +2350,7 @@ export class Whiteboard {
 
   destroy() {
     this.finishText();
+    clearTimeout(this.tipTimer);
     for (const c of this.cleanups) {
       c();
     }
@@ -2524,7 +2531,7 @@ export class Whiteboard {
     this.toolbarBox = htmlEl('div', { class: 'toolbar', role: 'toolbar', 'aria-label': 'Whiteboard', hidden: !withToolbar });
     this.popover = htmlEl('div', { class: 'pop', hidden: true });
     this.hintBox = htmlEl('div', { class: 'hint', hidden: true, role: 'status' });
-    this.tipBox = htmlEl('div', { class: 'tip', hidden: !withToolbar || !this.toolHints });
+    this.tipBox = htmlEl('div', { class: 'tip', hidden: !withToolbar || !this.toolHints, 'aria-hidden': 'true' });
     this.selbar = htmlEl('div', { class: 'selbar', role: 'toolbar', 'aria-label': 'Selected item', hidden: true });
     this.queueBox = htmlEl('div', { class: 'queue', role: 'group', 'aria-label': this.strings.queue, hidden: !this.turns });
     this.pagesBox = htmlEl('div', { class: 'pages', role: 'group', 'aria-label': this.strings.canvases, hidden: !this.showPages });
@@ -2590,23 +2597,36 @@ export class Whiteboard {
     if (!this.tipBox || this.tipBox.hidden) {
       return;
     }
-    this.tipBox.textContent = this.toolHint();
+    const before = this.tipKey;
+    const key = this.group.size > 0 ? 'group' : this.selected ? 'selected' : this.readOnlyFlag ? '' : this.tool === 'pointer' ? this.style.pointerMode : this.tool;
+    if (key === before) {
+      return;
+    }
+    this.tipKey = key;
+    clearTimeout(this.tipTimer);
+    // Letting go of a selection only hides its hint: the tool did not change.
+    const selection = (k) => k === 'group' || k === 'selected';
+    if (key === '' || (selection(before) && !selection(key))) {
+      this.tipBox.classList.remove('on');
+      return;
+    }
+    const hints = this.strings.toolHints ?? {};
+    this.tipBox.textContent = (hints[key] ?? '').replaceAll('{key}', String(this.tools.indexOf(this.tool) + 1));
+    this.tipBox.classList.add('on');
+    this.tipTimer = setTimeout(() => this.tipBox.classList.remove('on'), this.toolHintMs);
   }
 
-  /** @private The text of the tool hint (empty when there is none). */
-  toolHint() {
-    const hints = this.strings.toolHints ?? {};
-    if (this.group.size > 0) {
-      return hints.group ?? '';
-    }
-    if (this.selected) {
-      return hints.selected ?? '';
-    }
-    if (this.readOnlyFlag) {
-      return '';
-    }
-    const name = this.tool === 'pointer' ? this.style.pointerMode : this.tool;
-    return (hints[name] ?? '').replaceAll('{key}', String(this.tools.indexOf(this.tool) + 1));
+  /** Shows (the default) or never shows the hint on how to use the tool in hand. */
+  setToolHints(on) {
+    this.toolHints = !!on;
+    this.tipBox.hidden = !this.toolHints || this.toolbarBox.hidden;
+    clearTimeout(this.tipTimer);
+    this.tipBox.classList.remove('on');
+  }
+
+  /** Whether the hint on how to use the tool in hand is shown when the tool changes. */
+  get toolHintsShown() {
+    return this.toolHints;
   }
 
   /** @private */
