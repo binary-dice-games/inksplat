@@ -27,7 +27,12 @@ Out of scope: hosting any dynamic service; presenter functions.
   and commit, protocol, licences and credits, after nymph's). The build fills
   in the version and protocol and copies the images from `viewer/src/assets/`
   next to the pages (and under `/v<N>/`, with the privacy policy, so relative
-  links work there). **Invalid/expired token**: clear message.
+  links work there). The **tutorial** (`viewer/src/site/tutorial.html`, linked
+  from the home page, the About box and the join form) is a static page with
+  committed screenshots and GIFs in `tutorial/`, made by
+  `npm run tutorial:media` from the real pages rather than drawn by hand, so
+  they can be remade when the board changes; it is copied next to both home
+  pages like the policy. **Invalid/expired token**: clear message.
 - **Join flow**: name field (prefilled from `localStorage`) and colour; "Join"
   creates a guest `Session` with the default trackers/ICE servers. Statuses
   (`connecting`, `no-tracker`, `no-answer`, `ice-failed`, `reconnecting`,

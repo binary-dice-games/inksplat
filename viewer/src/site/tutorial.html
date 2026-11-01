@@ -1,0 +1,648 @@
+<!doctype html>
+<!-- MIT License © 2026 Binary Dice Games -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; img-src 'self'; style-src 'unsafe-inline'; base-uri 'none'"
+    />
+    <title>How to use inksplat</title>
+    <link rel="icon" href="icon.png" />
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #ffffff;
+        --fg: #1c2024;
+        --muted: #60646c;
+        --border: #d9d9e0;
+        --accent: #0b7a67;
+        --soft: #f4f6f8;
+        --kbd: #ffffff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111113;
+          --fg: #edeef0;
+          --muted: #b0b4ba;
+          --border: #363a3f;
+          --accent: #3fc1a8;
+          --soft: #1d1e21;
+          --kbd: #26282b;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font:
+          16px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      header,
+      main,
+      footer {
+        width: min(860px, 100%);
+        margin: 0 auto;
+        padding: 0 16px;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding-top: 14px;
+        padding-bottom: 14px;
+      }
+      .brand {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        color: inherit;
+        font-size: 17px;
+        font-weight: 700;
+        text-decoration: none;
+      }
+      nav {
+        display: flex;
+        gap: 18px;
+      }
+      a {
+        color: var(--accent);
+      }
+      nav a {
+        color: var(--muted);
+        text-decoration: none;
+        font-weight: 500;
+      }
+      h1 {
+        font-size: 2rem;
+        line-height: 1.2;
+        margin: 1rem 0 0.5rem;
+      }
+      h2 {
+        font-size: 1.45rem;
+        margin: 2.6rem 0 0.6rem;
+        padding-top: 1.2rem;
+        border-top: 1px solid var(--border);
+      }
+      h3 {
+        font-size: 1.1rem;
+        margin: 1.6rem 0 0.4rem;
+      }
+      .lead {
+        font-size: 1.1rem;
+        color: var(--muted);
+      }
+      figure {
+        margin: 1rem 0 1.4rem;
+      }
+      figure img {
+        display: block;
+        max-width: 100%;
+        height: auto;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+      }
+      figure.small img {
+        max-width: min(100%, 420px);
+      }
+      figure.side {
+        float: right;
+        margin: 0.3rem 0 1rem 1.4rem;
+      }
+      figcaption {
+        margin-top: 0.4rem;
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      .row {
+        display: flex;
+        gap: 24px;
+        align-items: flex-start;
+      }
+      .row figure {
+        flex: none;
+        margin: 0;
+      }
+      .clear {
+        clear: both;
+      }
+      kbd {
+        display: inline-block;
+        min-width: 1.6em;
+        padding: 0 0.4em;
+        border: 1px solid var(--border);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        background: var(--kbd);
+        font:
+          600 0.85em/1.5 ui-monospace,
+          'SFMono-Regular',
+          Consolas,
+          monospace;
+        text-align: center;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 0.8rem 0 1.2rem;
+        font-size: 0.95rem;
+      }
+      th,
+      td {
+        padding: 6px 8px;
+        border-bottom: 1px solid var(--border);
+        text-align: left;
+        vertical-align: top;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+      }
+      td:first-child {
+        white-space: nowrap;
+      }
+      .toc {
+        padding: 12px 16px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--soft);
+      }
+      .toc ol {
+        margin: 0.4rem 0 0;
+        padding-left: 1.4rem;
+        columns: 2 16rem;
+      }
+      .tip {
+        padding: 10px 14px;
+        border-left: 4px solid var(--accent);
+        border-radius: 6px;
+        background: var(--soft);
+      }
+      footer {
+        margin-top: 3rem;
+        padding-top: 1rem;
+        padding-bottom: 2rem;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      @media (max-width: 640px) {
+        figure.side {
+          float: none;
+          margin: 1rem 0;
+        }
+        td:first-child {
+          white-space: normal;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <a class="brand" href="./">
+        <img src="icon.png" alt="" width="28" height="28" />
+        <span>inksplat</span>
+      </a>
+      <nav aria-label="Site">
+        <a href="./">Home</a>
+        <a href="privacy.html">Privacy</a>
+        <a href="https://github.com/binary-dice-games/inksplat" rel="noopener">Source</a>
+      </nav>
+    </header>
+
+    <main>
+      <h1>How to use inksplat</h1>
+      <p class="lead">
+        inksplat is a shared whiteboard over a live screen. One person starts a session and sends a
+        link; everybody who opens it sees the same board and draws on it. This page shows the tools,
+        how to share pictures and files, and the shortcuts that have no button.
+      </p>
+
+      <figure>
+        <img src="tutorial/together.gif" width="768" height="432" alt="Ana, a viewer, circles two bars of a chart on the presenter's shared slide and writes 'Best month yet!'; the presenter adds a tick sticker." />
+        <figcaption>
+          A viewer (Ana) circles the chart on the presenter's shared slide and writes a comment;
+          the presenter adds a tick. Everybody sees the same board at once.
+        </figcaption>
+      </figure>
+
+      <nav class="toc" aria-label="Contents">
+        <strong>Contents</strong>
+        <ol>
+          <li><a href="#start">Start a session</a></li>
+          <li><a href="#join">Join a session</a></li>
+          <li><a href="#screen">Share a screen</a></li>
+          <li><a href="#toolbar">The toolbar</a></li>
+          <li><a href="#draw">Draw, write and stick</a></li>
+          <li><a href="#notes">Notes, pins and threads</a></li>
+          <li><a href="#select">Select, move and change</a></li>
+          <li><a href="#point">Point at things</a></li>
+          <li><a href="#files">Share pictures and files</a></li>
+          <li><a href="#canvases">Canvases, zoom and pan</a></li>
+          <li><a href="#turns">Speaking turns</a></li>
+          <li><a href="#save">Save and carry on later</a></li>
+          <li><a href="#shortcuts">Hidden shortcuts</a></li>
+          <li><a href="#trouble">If people cannot connect</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="start">1. Start a session</h2>
+      <p>
+        On the <a href="./">home page</a> press <strong>Start presenting</strong>. You become the
+        <em>presenter</em>: the host of the session. There is no account and nothing to install.
+      </p>
+      <figure>
+        <img src="tutorial/start.png" width="488" height="421" loading="lazy" alt="The presenter's start page with Start session and Settings buttons." />
+        <figcaption>
+          <strong>Settings…</strong> sets your name, colour and picture before you start.
+          <strong>Start session</strong> opens the board.
+        </figcaption>
+      </figure>
+      <figure class="side">
+        <img src="tutorial/panel.png" width="300" height="656" loading="lazy" alt="The presenter controls: invite link, people, screens on offer, board background." />
+      </figure>
+      <p>The <strong>Presenter</strong> panel on the right holds everything only you can do:</p>
+      <ul>
+        <li>
+          <strong>Invite</strong>: <strong>Copy</strong> the link and send it to people.
+          <strong>QR code</strong> shows it for a phone camera. <strong>New link</strong> makes a
+          fresh one.
+        </li>
+        <li>
+          <strong>People</strong>: who is here. <strong>Remove</strong> sends someone away.
+          Turn off <strong>Viewers can draw</strong> to make the board read-only for viewers, and
+          turn on <strong>Lock</strong> to keep new people out.
+        </li>
+        <li>
+          <strong>Screen</strong>: the screens on offer, and which one everybody sees (see
+          <a href="#screen">Share a screen</a>).
+        </li>
+        <li>
+          <strong>Board</strong>: the background of the canvas you are on, <strong>Clear drawings</strong>
+          (lines, text and stickers only), <strong>Clear all</strong> (everything), and
+          <strong>Save…</strong> / <strong>Open…</strong>.
+        </li>
+      </ul>
+      <p>
+        <strong>Controls</strong> (in the bar at the bottom right) folds the panel away and brings
+        it back. <strong>End session</strong> closes the session for everybody.
+      </p>
+      <p class="clear tip">
+        Keep the presenter page open: closing or reloading it ends the session (the page asks
+        first). The page keeps a backup of the board in your browser; the next session offers to
+        <strong>Resume</strong> it.
+      </p>
+
+      <h2 id="join">2. Join a session</h2>
+      <figure class="side small">
+        <img src="tutorial/join.png" width="488" height="545" loading="lazy" alt="The join form: name, colour, optional picture, and a Join button." />
+      </figure>
+      <p>
+        Open the link you were sent (or scan the QR code). Type your name, pick a colour, and press
+        <strong>Join</strong>. You can add a small picture of yourself: it is shown on your cursor
+        instead of your name.
+      </p>
+      <p>
+        Everybody sees everybody's cursor, with its name, on the canvas they share. Your name and
+        picture stay in your browser for the next time.
+      </p>
+      <p>
+        The bar at the bottom right has <strong>Share screen</strong>, the number of people (click
+        it for the list), <strong>Full screen</strong>, <strong>Tools</strong> (folds the toolbar
+        away to just watch), and <strong>Save…</strong> / <strong>Open…</strong>.
+      </p>
+
+      <h2 id="screen" class="clear">3. Share a screen</h2>
+      <p>
+        Anybody in the session can press <strong>Share screen</strong> and pick a browser tab, a
+        window (any application) or a whole screen with the browser's own picker.
+      </p>
+      <figure>
+        <img src="tutorial/session.png" width="1280" height="720" loading="lazy" alt="The presenter's page: the shared slide with drawings on it, and the Screen list with Pat, Ana and None." />
+        <figcaption>
+          Ana offers her screen. The presenter can <strong>Preview</strong> it, then
+          <strong>Show</strong> it to everybody. <strong>None</strong> shows a black screen.
+        </figcaption>
+      </figure>
+      <ul>
+        <li>
+          The presenter's own screen is shown to everybody at once. A screen offered by a viewer is
+          shown only when the presenter picks it.
+        </li>
+        <li>
+          The video is a few frames a second: fine for slides, documents and code, not for films.
+        </li>
+        <li>
+          <strong>Draw in the inksplat window, not on the shared window.</strong> The drawings are a
+          layer over a live copy of the screen. Anything drawn on the shared window itself would not
+          reach the others, so keep the inksplat window next to it.
+        </li>
+        <li>Press <strong>Stop sharing</strong> (or the browser's own bar) to stop.</li>
+      </ul>
+
+      <h2 id="toolbar">4. The toolbar</h2>
+      <p>The toolbar sits on the left. The small number next to each tool is its key:</p>
+      <div class="row">
+      <figure>
+        <img src="tutorial/toolbar.png" width="60" height="410" loading="lazy" alt="The toolbar: pointer, pen, text, sticker, eraser, sticky note, pin, thread, colour, undo, redo." />
+      </figure>
+      <table>
+        <thead>
+          <tr><th>Key</th><th>Tool</th><th>Press the key again for</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><kbd>1</kbd></td><td>Pointer</td><td>Laser, emotes, magnifier</td></tr>
+          <tr><td><kbd>2</kbd></td><td>Pen</td><td>Another width</td></tr>
+          <tr><td><kbd>3</kbd></td><td>Text</td><td>Another size</td></tr>
+          <tr><td><kbd>4</kbd></td><td>Sticker</td><td>The next sticker</td></tr>
+          <tr><td><kbd>5</kbd></td><td>Eraser</td><td></td></tr>
+          <tr><td><kbd>6</kbd></td><td>Sticky note</td><td>Another shape</td></tr>
+          <tr><td><kbd>7</kbd></td><td>Pin</td><td>Another shape</td></tr>
+          <tr><td><kbd>8</kbd></td><td>Thread</td><td>Other arrow heads</td></tr>
+          <tr><td><kbd>9</kbd></td><td>Colour</td><td>The next colour</td></tr>
+        </tbody>
+      </table>
+      </div>
+      <p>
+        Pressing the same key again goes through the tool's options. Clicking a tool that has options
+        opens a small panel with all of them:
+      </p>
+      <figure class="small">
+        <img src="tutorial/pen-options.png" width="260" height="80" loading="lazy" alt="The pen's widths: thin, medium and thick." />
+      </figure>
+      <figure class="small">
+        <img src="tutorial/colours.png" width="300" height="120" loading="lazy" alt="The colour panel: eight colours." />
+      </figure>
+      <p class="clear">
+        A faint line under the canvas buttons says, for a few seconds, how to use the tool you just
+        picked. Turn it off in <strong>Settings</strong> (presenter) or on the join form (viewers).
+      </p>
+
+      <h2 id="draw">5. Draw, write and stick</h2>
+      <h3>Pen <kbd>2</kbd></h3>
+      <p>Drag to draw. Press <kbd>2</kbd> again for a thicker or thinner line.</p>
+      <figure>
+        <img src="tutorial/pen.gif" width="675" height="390" loading="lazy" alt="Pressing 2 picks the pen; a loop is drawn; pressing 2 again picks a thicker pen." />
+      </figure>
+
+      <h3>Text <kbd>3</kbd> and stickers <kbd>4</kbd></h3>
+      <p>
+        With the text tool, click where the text goes, type, and press <kbd>Enter</kbd>
+        (<kbd>Shift</kbd>+<kbd>Enter</kbd> for a new line, <kbd>Esc</kbd> to drop it). With the
+        sticker tool, each click puts a sticker down; press <kbd>4</kbd> again for the next one
+        (tick, cross, question mark, stars, emoticons…).
+      </p>
+      <p>
+        Back on the pointer, <kbd>Shift</kbd>+drag a sticker to make it bigger or smaller, and
+        <kbd>Ctrl</kbd>+drag to turn it.
+      </p>
+      <figure>
+        <img src="tutorial/text-stickers.gif" width="675" height="390" loading="lazy" alt="Text 'Ship it on Friday' is typed; three stickers are put down; one is scaled with Shift+drag and another turned with Ctrl+drag." />
+      </figure>
+
+      <h3>Eraser <kbd>5</kbd>, undo and redo</h3>
+      <p>
+        Drag the eraser over what to remove: it is marked as you go and removed when you let go.
+        The arrows at the bottom of the toolbar undo and redo your own changes. While a drawing
+        tool is in hand, <kbd>Ctrl</kbd>+<kbd>Z</kbd> undoes and <kbd>Ctrl</kbd>+<kbd>Y</kbd> (or
+        <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd>) redoes too; with the pointer those keys are
+        left to the page. On a Mac use <kbd>Cmd</kbd> instead of <kbd>Ctrl</kbd>.
+      </p>
+      <figure>
+        <img src="tutorial/eraser.gif" width="675" height="390" loading="lazy" alt="The eraser crosses both lines of an X; they disappear; Ctrl+Z brings them back." />
+      </figure>
+
+      <h2 id="notes">6. Sticky notes, pins and threads</h2>
+      <p>
+        <strong>Sticky notes <kbd>6</kbd></strong>: click to put a note down, or drag out the size
+        you want. Click a note to write on it; click away (or <kbd>Ctrl</kbd>+<kbd>Enter</kbd>) to
+        finish. Press <kbd>6</kbd> again for another shape: square, rounded, oval, diamond,
+        hexagon. Resize a note from its corner.
+      </p>
+      <p>
+        <strong>Pins <kbd>7</kbd></strong> put bare pins on the board, in five shapes.
+        <strong>Threads <kbd>8</kbd></strong> hang between pins, like on a detective's board: press
+        on a pin (every note, picture and link has one), drag to another and let go. Letting go over
+        a note, picture, link or sticker puts a new pin there. Press <kbd>8</kbd> again for arrow
+        heads: none, at the source, at the destination, or both.
+      </p>
+      <figure>
+        <img src="tutorial/notes-threads.gif" width="675" height="390" loading="lazy" alt="Two sticky notes are made and written; a thread is pulled from one note's pin to the other; a pin is put down and Shift+dragged to pull a second thread." />
+        <figcaption>
+          <kbd>Shift</kbd>+drag from any pin pulls a thread whatever tool you hold.
+        </figcaption>
+      </figure>
+      <ul>
+        <li>Drag a pin to move it. Threads follow the pins they hang from.</li>
+        <li>
+          A pin put on a note, picture, link or sticker stays on it when that moves, turns or
+          scales.
+        </li>
+        <li>
+          Drag a note, picture or link <em>by its pin</em> onto another one to attach it: it is
+          drawn on top and moves, turns and scales with it.
+        </li>
+      </ul>
+
+      <h2 id="select">7. Select, move and change</h2>
+      <p>
+        With the pointer <kbd>1</kbd>, drag anything to move it. Click it to select it: a bar
+        appears over it to change it (colour, shape, text size, lock…). <kbd>Delete</kbd> or
+        <kbd>Backspace</kbd> removes what is selected, <kbd>Esc</kbd> deselects.
+      </p>
+      <p>
+        To select several things, <strong>drag from an empty place</strong>: everything the line
+        passes over is selected. Drag any of them to move them all, or press <kbd>Delete</kbd>.
+      </p>
+      <figure>
+        <img src="tutorial/select.gif" width="675" height="390" loading="lazy" alt="A line is dragged from an empty place across three stickers and an oval; the four are selected, moved together and deleted." />
+      </figure>
+      <ul>
+        <li>
+          <kbd>Ctrl</kbd>+<kbd>C</kbd>, <kbd>Ctrl</kbd>+<kbd>X</kbd> and <kbd>Ctrl</kbd>+<kbd>V</kbd>
+          copy, cut and paste the selection. It is pasted where the mouse is, on the canvas shown.
+        </li>
+        <li>
+          Anybody can change anybody's drawings. The owner can <strong>lock</strong> one from the
+          bar over it: locked for the others (only the owner can change it) or locked for everybody.
+        </li>
+        <li>
+          Select a note to copy its text, or double-click a note you cannot change to copy its
+          text.
+        </li>
+        <li>
+          Stickers and links scale with <kbd>Shift</kbd>+drag; pictures and files resize from their
+          corner; everything turns with <kbd>Ctrl</kbd>+drag (what is pinned turns about its pin).
+        </li>
+      </ul>
+
+      <h2 id="point">8. Point at things</h2>
+      <p>
+        The pointer <kbd>1</kbd> has four modes. Press <kbd>1</kbd> again to go through them, and
+        <kbd>Esc</kbd> to come back to the cursor.
+      </p>
+      <ul>
+        <li><strong>Cursor</strong>: the usual one.</li>
+        <li><strong>Laser</strong>: dragging leaves a glowing trail that fades in a second.</li>
+        <li>
+          <strong>Emotes</strong>: press, move towards a face on the wheel and let go (or click,
+          then click a face). It floats up and fades; anybody who clicks it while it lives makes it
+          bigger.
+        </li>
+        <li>
+          <strong>Magnifier</strong>: a round lens next to the cursor enlarges the screen and the
+          drawings under it, to read small text. The mouse wheel changes how much. Only you see it.
+        </li>
+      </ul>
+      <figure>
+        <img src="tutorial/laser-emotes.gif" width="680" height="383" loading="lazy" alt="The laser leaves a fading trail over a chart; then a thumbs-up emote is picked from the wheel and floats up." />
+      </figure>
+      <figure>
+        <img src="tutorial/magnifier.png" width="760" height="430" loading="lazy" alt="The magnifier lens enlarging the words 'per month' on the slide." />
+      </figure>
+
+      <h2 id="files">9. Share pictures and files</h2>
+      <p>
+        <strong>Drag files from your computer and drop them on the board.</strong> Everybody in the
+        session gets them. There is no upload button: dragging is the way in.
+      </p>
+      <figure>
+        <img src="tutorial/drop-files.gif" width="675" height="390" loading="lazy" alt="A photo is dragged from the desktop and dropped on the board, then made smaller from its corner; a PDF is dropped next to it and shows its first page." />
+      </figure>
+      <ul>
+        <li>
+          <strong>Pictures</strong> (PNG, JPEG, GIF, WebP…) are pinned on the board as they are. An
+          animated GIF moves. Resize a picture from its corner and turn it with
+          <kbd>Ctrl</kbd>+drag.
+        </li>
+        <li>
+          <strong>Other files</strong>, up to 5 MB each, are pinned as a card with a preview: the
+          first page of a PDF, the text of a Word, Excel, PowerPoint or OpenDocument file. Up to
+          five files can be dropped at once.
+        </li>
+        <li>
+          <strong>To take a copy</strong>: <kbd>Shift</kbd>+drag a picture or file card out of the
+          browser onto your desktop or into another application (a plain drag only moves it on
+          the board), or double-click it to save it.
+        </li>
+        <li>
+          Big files take a moment to reach everybody; until then the card says
+          <em>The file is still arriving…</em>.
+        </li>
+      </ul>
+      <p>
+        <strong>Cut-out pictures and links.</strong> A picture with a transparent background is cut
+        out: its border and shadow follow the shape. A web address pasted with
+        <kbd>Ctrl</kbd>+<kbd>V</kbd>, or dragged from the browser's address bar onto the board,
+        becomes a card; click it (with the pointer) to open the page in a new tab.
+      </p>
+      <figure>
+        <img src="tutorial/cutout-link.gif" width="675" height="465" loading="lazy" alt="A logo with a transparent background is dropped and turned with Ctrl+drag; a web address is pasted and becomes a link card." />
+      </figure>
+
+      <h2 id="canvases">10. Canvases, zoom and pan</h2>
+      <p>
+        The round buttons at the top are five <strong>canvases</strong>, each with its own drawings
+        and background. The small number on each is how many people are on it. Everybody picks their
+        own canvas and sees the cursors of those on the same one.
+      </p>
+      <p>
+        By default canvas 1 shows the shared screen, and the others a whiteboard, a blackboard, a
+        wall and a cork board. The presenter changes the background of the canvas they are on under
+        <strong>Board</strong> in the controls.
+      </p>
+      <p>
+        <strong>Zoom</strong> with the mouse wheel: it zooms where the mouse is. Zoomed in,
+        <kbd>Space</kbd>+drag (or a drag with the middle button) moves around. <kbd>0</kbd> goes
+        back to the whole view. Zooming is only for you.
+      </p>
+      <figure>
+        <img src="tutorial/zoom-canvases.gif" width="768" height="432" loading="lazy" alt="The wheel zooms into the chart, Space+drag pans, 0 resets; then canvases 2 to 5 are visited: whiteboard, blackboard, wall, cork." />
+      </figure>
+
+      <h2 id="turns">11. Speaking turns</h2>
+      <p>
+        <strong>Ask for a turn</strong> (bottom left) puts you in the speaking queue, which
+        everybody sees above the button. Press it again to leave the queue, or to end your turn when
+        it comes. The presenter can take anyone off the queue.
+      </p>
+
+      <h2 id="save">12. Save and carry on later</h2>
+      
+      <p><strong>Save…</strong> keeps the board in one of three ways:</p>
+      <ul>
+        <li><strong>Picture (PNG)</strong> and <strong>Drawing (SVG)</strong>: the canvas shown.</li>
+        <li>
+          <strong>Board file</strong> (<code>.inksplat.zip</code>): all five canvases, with the
+          notes, threads, pictures and files on them. <strong>Open…</strong> it in a later session
+          to carry on; everything in it becomes yours there. Any zip tool shows what is inside.
+        </li>
+      </ul>
+      <figure class="small">
+        <img src="tutorial/save.png" width="560" height="299" loading="lazy" alt="The Save the board dialog: Picture (PNG), Drawing (SVG), Board file." />
+      </figure>
+      <p>Nothing is stored on a server: if nobody saves, the board is gone when the session ends.</p>
+
+      <h2 id="shortcuts" class="clear">13. Hidden shortcuts</h2>
+      <p>Things that have no button. <kbd>Ctrl</kbd> is <kbd>Cmd</kbd> on a Mac.</p>
+      <table>
+        <thead>
+          <tr><th>Do this</th><th>To</th></tr>
+        </thead>
+        <tbody>
+          <tr><td><kbd>1</kbd> … <kbd>9</kbd></td><td>Pick a tool; the same key again goes through its options</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>Deselect; leave the laser, emotes or magnifier; go back to the pointer</td></tr>
+          <tr><td><kbd>Delete</kbd> / <kbd>Backspace</kbd></td><td>Remove what is selected</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Undo, redo (with a drawing tool in hand; the toolbar arrows work always)</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd></td><td>Copy, cut, paste the selection (pasted at the mouse)</td></tr>
+          <tr><td>Drag from an empty place</td><td>Select everything the line passes over</td></tr>
+          <tr><td><kbd>Shift</kbd>+drag a sticker or link</td><td>Scale it</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+drag</td><td>Turn a sticker, note, picture, file or link</td></tr>
+          <tr><td><kbd>Shift</kbd>+drag from a pin</td><td>Pull a thread, whatever tool you hold</td></tr>
+          <tr><td>Drag a note, picture or link by its pin onto another</td><td>Attach it, so they move together</td></tr>
+          <tr><td>Drop files on the board</td><td>Share pictures and files (up to 5 MB each)</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>V</kbd> a web address, or drop a link</td><td>Pin a card that opens the page</td></tr>
+          <tr><td><kbd>Shift</kbd>+drag a picture or file out</td><td>Copy it to your desktop or another application</td></tr>
+          <tr><td>Double-click a picture or file</td><td>Save it</td></tr>
+          <tr><td>Double-click a locked note</td><td>Copy its text</td></tr>
+          <tr><td>Click an emote as it floats</td><td>Make it bigger</td></tr>
+          <tr><td>Mouse wheel</td><td>Zoom at the mouse (with the magnifier: change the lens; <kbd>Ctrl</kbd>+wheel still zooms)</td></tr>
+          <tr><td><kbd>Space</kbd>+drag, middle button drag</td><td>Move around when zoomed in</td></tr>
+          <tr><td><kbd>0</kbd></td><td>Back to the whole view</td></tr>
+        </tbody>
+      </table>
+      <p>
+        The keys work whenever you are not typing in a text box or a note.
+      </p>
+
+      <h2 id="trouble">14. If people cannot connect</h2>
+      <p>
+        inksplat has no server: browsers find each other through public trackers and then talk
+        directly. Some office or school networks block that. A viewer who stays on
+        <em>Connecting…</em> can open <strong>Cannot connect? Join with a code</strong>, make a
+        code, and send it to the presenter (by chat or mail). The presenter pastes it under
+        <strong>Join codes</strong> in the controls and sends the answer back.
+      </p>
+      <p>
+        What leaves your computer, and where it goes, is in the
+        <a href="privacy.html">privacy policy</a>.
+      </p>
+    </main>
+
+    <footer>
+      MIT License © 2026 Binary Dice Games ·
+      <a href="./">Home</a> ·
+      <a href="privacy.html">Privacy</a> ·
+      <a href="https://github.com/binary-dice-games/inksplat" rel="noopener">Source code</a>
+    </footer>
+  </body>
+</html>

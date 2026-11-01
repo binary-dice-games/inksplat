@@ -3,7 +3,7 @@
 //
 //   node scripts/smoke-site.mjs <site url, ending with />
 //
-// Fetches the viewer page and its script, the versioned copy, the privacy policy and
+// Fetches the viewer page and its script, the versioned copy, the privacy policy, the tutorial and
 // a missing page (which must be the 404 page). Exits 1 with the reasons if anything
 // is wrong. The check is meant to run right after a deploy.
 import { fileURLToPath } from 'node:url';
@@ -52,6 +52,7 @@ export async function smokeSite(base, get = (url) => fetch(url, { redirect: 'man
     label: `versioned presenter /${major}`,
   });
   await check('privacy.html', { contains: 'privacy policy', label: 'privacy policy' });
+  await check('tutorial.html', { contains: 'How to use inksplat', label: 'tutorial' });
   await check('no-such-page-for-smoke-test', {
     status: 404,
     contains: 'redirect.js',

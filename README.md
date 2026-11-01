@@ -33,6 +33,8 @@ because the page does the same and more.
 
 ## Using the board
 
+The user guide, with pictures, is the site's [tutorial page](viewer/src/site/tutorial.html) (`tutorial.html` on the site). In short:
+
 Keys 1-9 pick the tool (1 pointer, 2 line, 3 text, 4 sticker, 5 eraser, 6 sticky note, 7 pin, 8 thread, 9 colour); pressing the
 same number again goes through its options (clicking a tool with options opens a panel with all of them), and a faint line under the canvas buttons says for a few seconds how to use the tool just picked (turned off in **Settings**, or on the join form for viewers). The pointer has four modes: **cursor** (the usual one), **laser** (dragging leaves a glowing trail that fades in a second) and **emotes** (press, move towards a face on the wheel and let go, or click and then click a face; it floats up and fades, and anybody who clicks it while it lives makes it bigger), and the **magnifier** (the cursor with a round lens beside it that enlarges the screen and the drawings under the pointer, to read small text; the wheel changes how much, and only you see it); Esc goes back to the cursor. When the pointer comes back by itself (after a note is put down, or Esc), the first press of 1 only confirms it. Drag items to move them, click one to
 select it (a bar to change it appears over it, hidden while it is dragged) and press Delete or Backspace to remove it. With the pointer, a drag that starts on an empty place selects everything it passes over (as the eraser marks it); drag any of them to move them all, change their colour from the bar, press Delete to remove them, and Ctrl+C, Ctrl+X and Ctrl+V to copy, cut and paste them (pasted where the pointer is, on the canvas shown; zoomed in, Space+drag or the middle button pans) (anybody can change anybody's, unless the owner locks it from the bar over it: only the owner, or nobody); stickers and links scale with Shift+drag, pictures and files resize from their corner, and all turn with Ctrl+drag (what is pinned turns about its pin). The wheel zooms
@@ -65,8 +67,9 @@ Needs Node.js 20+; the browser tests need Chrome. Details in
 | `packages/collab-session/` | Serverless WebRTC rooms and video |
 | `packages/collab-whiteboard/` | Whiteboard |
 | `viewer/` | The viewer app (`main.ts`) and the presenter page (`present.ts`, `share-host.ts`) |
+| `viewer/src/site/` | Static pages of the site: 404, privacy policy, tutorial (with its pictures in `tutorial/`) |
 | `packages/defaults/` | Trackers, ICE servers, video presets, `stage` message, invite links |
-| `tests/` | Vitest unit tests, Chrome WebRTC tests, fake tracker |
+| `tests/` | Vitest unit tests, Chrome WebRTC tests, fake tracker, the tutorial's picture maker (`tests/tutorial/`) |
 | `cmake/` | CMake modules (Node discovery, `inksplat_add_test`) |
 | `spec/` | Design and plan documents, one folder per project |
 | `docs/` | User and developer documentation |
