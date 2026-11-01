@@ -103,10 +103,15 @@ export interface SessionOptions {
   videoCodecs?: string[];
   /**
    * Host: forward the encoded frames of a guest's stream to the viewers where the browser can
-   * (Chrome), instead of decoding and encoding them again; default true. With forwarding every
-   * link uses VP8.
+   * (Chrome), instead of decoding and encoding them again; default true.
    */
   forwardFrames?: boolean;
+  /**
+   * Host, with forwarding: the codecs (MIME types) to send and receive on, best first; each
+   * link uses the first its offer lists. A viewer whose link uses another codec than the shown
+   * guest's gets that stream decoded and encoded again. Default `['video/VP8']`.
+   */
+  forwardCodecs?: string[];
   /**
    * Receives one line per step of making a connection (arguments as for console.log):
    * trackers, announces, offers, answers, ICE and channel states. No secrets are logged.
@@ -211,6 +216,10 @@ export class FrameRouter<F extends RoutedFrame = RoutedFrame> {
   constructor(options: {
     requestKeyFrame: (source: string) => void;
     copy: (frame: F, rtpTimestamp: number) => unknown;
+    /** The codec (MIME type) a source sends, or undefined when unknown. */
+    codecOf?: (source: string) => string | undefined;
+    /** Asks output `key`'s own encoder for a key frame (an output that re-encodes). */
+    requestOutputKeyFrame?: (key: unknown) => void;
     retryMs?: number;
     maxTries?: number;
     setTimer?: (fn: () => void, ms: number) => unknown;
@@ -218,7 +227,9 @@ export class FrameRouter<F extends RoutedFrame = RoutedFrame> {
   });
   readonly source: string | null;
   setSource(source: string | null): void;
-  addOutput(key: unknown, id: string | null, write: (frame: unknown) => void): void;
+  addOutput(key: unknown, id: string | null, write: (frame: unknown) => void, codec?: string): void;
+  /** Whether output `key` re-encodes the source (its codec differs from the source's). */
+  reencodes(key: unknown): boolean;
   setOutputId(key: unknown, id: string): void;
   removeOutput(key: unknown): void;
   waiting(): boolean;
@@ -227,6 +238,9 @@ export class FrameRouter<F extends RoutedFrame = RoutedFrame> {
   keyFrameWanted(): void;
   stop(): void;
 }
+
+/** The video codecs (lower-case MIME types) an SDP lists for media section `mid`, in order. */
+export function sdpCodecs(sdp: string | undefined, mid: string | null): string[];
 
 export function memoryLinkPair(): [unknown, unknown];
 export function createMemoryNetwork(): MemoryNetwork;

@@ -1,6 +1,6 @@
 // MIT License © 2026 Binary Dice Games
 import { describe, expect, it } from 'vitest';
-import { FrameRouter } from '@inksplat/collab-session';
+import { FrameRouter, sdpCodecs } from '@inksplat/collab-session';
 
 // The host's relay of encoded frames (spec/07_participant_streaming/DESIGN.md section 4.2),
 // with fake frames and a fake clock.
@@ -142,5 +142,73 @@ describe('the frame router', () => {
     router.input('ana', frame('ana', 'key', 3));
     expect(out).toHaveLength(1);
     expect(asked).toEqual(['ana']);
+  });
+
+  it('forwards only to outputs on the source codec; the others take their own encoder', () => {
+    const asked: string[] = [];
+    const ownAsked: unknown[] = [];
+    const timers: (() => void)[] = [];
+    const codecs: Record<string, string> = { ana: 'video/AV1', bob: 'video/H264' };
+    const router = new FrameRouter<Fake>({
+      requestKeyFrame: (s) => asked.push(s),
+      requestOutputKeyFrame: (key) => ownAsked.push(key),
+      codecOf: (s) => codecs[s],
+      copy: (f, rtpTimestamp) => ({ from: f.from, type: f.type, rtpTimestamp }),
+      setTimer: (fn) => timers.push(fn),
+      clearTimer: () => {},
+    });
+    const got: Record<string, string[]> = { cy: [], dan: [] };
+    router.addOutput('cy', 'cy', (f) => got.cy!.push((f as Fake).from), 'video/AV1');
+    router.addOutput('dan', 'dan', (f) => got.dan!.push((f as Fake).from), 'video/vp8');
+    router.setSource('ana');
+    expect(router.reencodes('cy')).toBe(false);
+    expect(router.reencodes('dan')).toBe(true);
+    expect(asked).toEqual(['ana']);
+    expect(ownAsked).toEqual(['dan']); // dan's own encoder starts on a key frame
+    router.input('ana', frame('ana', 'key', 1));
+    router.own('dan', 'host', frame('host-for-dan', 'key', 7));
+    router.own('cy', 'host', frame('host-for-cy', 'key', 7)); // cy forwards: own frames dropped
+    expect(got).toEqual({ cy: ['ana'], dan: ['host-for-dan'] });
+    // Back to the host's own stream: everybody takes their own encoder.
+    router.setSource('host');
+    expect(router.reencodes('dan')).toBe(false);
+    router.own('cy', 'host', frame('host-for-cy', 'key', 8));
+    expect(got.cy).toEqual(['ana', 'host-for-cy']);
+  });
+
+  it('treats an unknown codec as a match', () => {
+    const router = new FrameRouter<Fake>({ requestKeyFrame: () => {}, copy: (f) => f });
+    router.addOutput('cy', 'cy', () => {});
+    router.addOutput('dan', 'dan', () => {}, 'video/VP8');
+    router.setSource('ana'); // no codecOf: unknown
+    expect(router.reencodes('cy')).toBe(false);
+    expect(router.reencodes('dan')).toBe(false);
+  });
+});
+
+describe('sdpCodecs', () => {
+  const sdp = [
+    'v=0',
+    'm=application 9 UDP/DTLS/SCTP webrtc-datachannel',
+    'a=mid:0',
+    'm=video 9 UDP/TLS/RTP/SAVPF 96 97 45 102',
+    'a=rtpmap:96 VP8/90000',
+    'a=mid:1',
+    'a=rtpmap:97 rtx/90000',
+    'a=rtpmap:45 AV1/90000',
+    'm=video 9 UDP/TLS/RTP/SAVPF 102',
+    'a=mid:2',
+    'a=rtpmap:102 H264/90000',
+    '',
+  ].join('\r\n');
+
+  it('lists the codecs of one media section, wherever its mid line is', () => {
+    expect(sdpCodecs(sdp, '1')).toEqual(['video/vp8', 'video/rtx', 'video/av1']);
+    expect(sdpCodecs(sdp, '2')).toEqual(['video/h264']);
+  });
+
+  it('returns nothing for an unknown section or no description', () => {
+    expect(sdpCodecs(sdp, '7')).toEqual([]);
+    expect(sdpCodecs(undefined, '1')).toEqual([]);
   });
 });
