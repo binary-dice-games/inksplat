@@ -6,7 +6,7 @@
 // The site holds the viewer app at the root and again under /v<N>/ (N is the major
 // of the wire protocol, so a link made with protocol N always finds a
 // matching viewer and presenter page), a 404 page that keeps an invite in the address, the privacy
-// policy, and any older viewers kept in site-archive/ (one folder per protocol
+// policy, the tutorial (`tutorial.html` and its images in `tutorial/`), and any older viewers kept in site-archive/ (one folder per protocol
 // major, for example site-archive/v1/), copied as they are. GitHub Pages replaces
 // the whole site on each deploy, which is why older majors are kept in the repo.
 import {
@@ -76,6 +76,11 @@ export async function buildSite(out, { base = '/', archive = join(root, 'site-ar
   copyFileSync(join(siteSrc, 'privacy.html'), join(out, 'privacy.html'));
   // The home page links the policy next to itself, so the versioned copy gets one too.
   copyFileSync(join(siteSrc, 'privacy.html'), join(out, versionDir, 'privacy.html'));
+  // The tutorial and its screenshots and animations, next to both home pages.
+  for (const dir of [out, join(out, versionDir)]) {
+    copyFileSync(join(siteSrc, 'tutorial.html'), join(dir, 'tutorial.html'));
+    cpSync(join(siteSrc, 'tutorial'), join(dir, 'tutorial'), { recursive: true });
+  }
   writeFileSync(join(out, '.nojekyll'), '');
   return { versionDir };
 }

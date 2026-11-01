@@ -35,14 +35,14 @@ of WebRTC.
 | `relay` | `tests/unit/relay.test.ts` | The host's forwarding of encoded frames: every output but the source's, key frame gating, continuous timestamps, key frame requests |
 | `share_button` | `tests/unit/share-button.test.ts` | The share button: what the owner of a stream is told, the one-time notice, hidden without a picker |
 | `viewer_model` | `tests/unit/viewer-model.test.ts` | The viewer's messages and decisions that need no page |
-| `site_build` | `tests/unit/site-build.test.ts` | The Pages site: both pages at the root and under `/v2/` (the protocol major), bundle sizes, the 404 page, the smoke check |
+| `site_build` | `tests/unit/site-build.test.ts` | The Pages site: both pages at the root and under `/v2/` (the protocol major), bundle sizes, the 404 page, the tutorial and its pictures, the smoke check |
 
 Browser tests drive real Chrome with real WebRTC over a local fake tracker.
 
 | ctest name | File | What it checks |
 |---|---|---|
 | `webrtc` | `tests/e2e/webrtc.test.ts` | Video and board over real WebRTC; trackers that drop big announces; codec preference; nothing secret in the tracker traffic or the logs |
-| `site` | `tests/e2e/site.test.ts` | The site served like GitHub Pages: viewer at `/` and `/v2/`, a 404 that keeps an invite, the privacy page |
+| `site` | `tests/e2e/site.test.ts` | The site served like GitHub Pages: viewer at `/` and `/v2/`, a 404 that keeps an invite, the privacy page, the tutorial (linked from home, no broken pictures) |
 | `present` | `tests/e2e/present.test.ts` | The presenter page: starting a session, sharing a (fake) screen, video to a viewer, drawing both ways, None, a lost source, end, the whole-screen warning, the pointer option, settings, folding |
 | `streams` | `tests/e2e/streams.test.ts` | Guests' uplinks and the host's relay over real WebRTC, forwarded and re-encoded: switching sources, a late joiner, nothing sent before the host asks |
 | `participant_streaming` | `tests/e2e/participant-streaming.test.ts` | The built site: viewers and the presenter offer screens, the presenter previews, shows, switches and shows none |
@@ -90,6 +90,21 @@ The rules (they are also in `CLAUDE.md`):
 - Support code is in `tests/support/`: `fake-tracker.ts`, `browser.ts` (launches
   Chrome), `presenter-site.ts` (the site, a tracker, a presenter page with a fake
   screen, a joined viewer), `rooms.ts` (memory-network sessions), `wait.ts`.
+
+## The tutorial's pictures
+
+The screenshots and animations of the tutorial page (`viewer/src/site/tutorial/`)
+are made by driving the built site in Chrome, like the browser tests:
+
+```
+npm run tutorial:media                    # all of them (about two minutes)
+npm run tutorial:media -- -t "pen"        # only those whose name matches
+```
+
+It needs Chrome and ffmpeg. It is not part of the test suite: run it after a
+change to the look of the board and commit the files it writes. The script is
+`tests/tutorial/tutorial.media.ts`; it draws a visible cursor and the keys held,
+which a headless browser does not show.
 
 ## Trying it by hand
 

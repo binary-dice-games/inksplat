@@ -19,7 +19,8 @@
     "test": "vitest run --project unit",
     "test:e2e": "vitest run --project e2e",
     "build:viewer": "node scripts/build-viewer.mjs",
-    "build:site": "node scripts/build-site.mjs"
+    "build:site": "node scripts/build-site.mjs",
+    "tutorial:media": "vitest run --config tests/tutorial/vitest.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "^9.17.0",

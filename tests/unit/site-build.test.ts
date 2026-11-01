@@ -92,6 +92,21 @@ describe('the Pages site', () => {
     expect(index).toContain('<a class="button primary" href="present.html">Start presenting</a>');
   });
 
+  it('ships the tutorial with every picture it shows, also under the major', () => {
+    for (const dir of ['', `v${protocolMajor()}/`]) {
+      const page = readFileSync(join(out, dir, 'tutorial.html'), 'utf8');
+      const images = [...page.matchAll(/src="(tutorial\/[^"]+)"/g)].map((m) => m[1]!);
+      expect(images.length).toBeGreaterThan(10);
+      for (const image of images) {
+        const head = readFileSync(join(out, dir, image))
+          .subarray(0, 4)
+          .toString('latin1');
+        expect(head, `${dir}${image}`).toMatch(/^(\x89PNG|GIF8)/);
+      }
+      expect(readFileSync(join(out, dir, 'index.html'), 'utf8')).toContain('href="tutorial.html"');
+    }
+  });
+
   it('points the 404 page at the site base', () => {
     const page = readFileSync(join(out, '404.html'), 'utf8');
     expect(page).toContain('src="/inksplat/redirect.js"');

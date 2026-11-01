@@ -29,7 +29,12 @@ beforeAll(async () => {
       return;
     }
     const path = url.pathname.slice('/inksplat/'.length);
-    const types: Record<string, string> = { html: 'text/html', js: 'text/javascript' };
+    const types: Record<string, string> = {
+      html: 'text/html',
+      js: 'text/javascript',
+      png: 'image/png',
+      gif: 'image/gif',
+    };
     try {
       const file = path === '' || path.endsWith('/') ? `${path}index.html` : path;
       const body = readFileSync(join(out, file));
@@ -91,6 +96,34 @@ describe('the Pages site in a browser', () => {
     await page.goto(`${origin}/inksplat/privacy.html`);
     expect(await page.title()).toBe('inksplat privacy policy');
     expect(await page.locator('main h2').count()).toBeGreaterThan(3);
+    await page.close();
+  });
+
+  it('links the tutorial from the home page, and shows all its pictures', async () => {
+    const page = await browser.newPage();
+    await page.goto(`${origin}/inksplat/`);
+    await page.locator('.home-nav a[href="tutorial.html"]').click();
+    await page.waitForURL(`${origin}/inksplat/tutorial.html`);
+    expect(await page.title()).toBe('How to use inksplat');
+    const images = page.locator('main img');
+    expect(await images.count()).toBeGreaterThan(10);
+    // Lazy pictures load when scrolled to: load them all, then check none is broken.
+    await images.evaluateAll((all) =>
+      all.forEach((img) => ((img as HTMLImageElement).loading = 'eager')),
+    );
+    await expect
+      .poll(() =>
+        images.evaluateAll(
+          (all) => all.filter((img) => !(img as HTMLImageElement).complete).length,
+        ),
+      )
+      .toBe(0);
+    const broken = await images.evaluateAll((all) =>
+      all
+        .filter((img) => (img as HTMLImageElement).naturalWidth === 0)
+        .map((img) => img.getAttribute('src')),
+    );
+    expect(broken).toEqual([]);
     await page.close();
   });
 });
