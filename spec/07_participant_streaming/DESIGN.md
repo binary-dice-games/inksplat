@@ -215,6 +215,31 @@ rate is low by design (`spec/03`), so this stays within the bitrate cap. Per-vie
 would need simulcast or transcoding and is out of scope. The host's own stream keeps today's
 per-link encoders.
 
+### 4.5 One encoder for the host's own stream
+
+Before, the host's own stream had one encoder per viewer: N encodes of the same picture, which
+at 4K and 10 viewers is most of a CPU in software. With forwarding and `forwardCodecs` the host
+encodes it once (`SharedEncoder`) and the router forwards those frames, like a guest's, to every
+viewer whose downlink uses that codec; a viewer on another codec keeps its own encoder fed with
+the stream (`reencodes`).
+
+- **The encoder** is a connection of the page to itself: the sending side's encoded frames go
+  to the router and on to the receiving side, which decodes them and shows them nowhere.
+  Measured: a receiving side that drops the frames asks for a key frame every 0.4 s, and a
+  sending side that drops them stays at the start bitrate (~280 kbit/s, no feedback); a
+  decoder costs far less than an encoder. The router uses it once connected (`reset`: every
+  output waits for its key frame); until then each link encodes on its own.
+- **Codec**: the first of `forwardCodecs` the browser can send and receive. The presenter page
+  orders `FORWARD_CODECS` with the codecs this machine encodes in hardware first
+  (`mediaCapabilities.encodingInfo`, `powerEfficient`; `viewer/src/codec-choice.ts`), so a Mac
+  without AV1 hardware encodes in H.264 on its media engine. The page cannot force a hardware
+  encoder: the browser picks it for the codec. `Session.encoderInfo()` and the log
+  (`shared encoder: ...`) say which it took.
+- **Rate**: one encoder serves everybody, as for a guest's stream (4.4): capped by the
+  settings, not adapted per viewer; a viewer that loses frames asks for a key frame (read from
+  the downlink senders' PLI counters, as for a guest).
+- `sharedEncoder: false` (session option) keeps one encoder per link.
+
 ## 5. Protocol
 
 ### 5.1 Channel `screen` (reliable)

@@ -63,6 +63,7 @@
     iceServers: [],
     forwardFrames: q.get('forward') !== '0',
     forwardCodecs: q.get('fcodecs') ? q.get('fcodecs').split(',') : undefined,
+    sharedEncoder: q.get('shared') !== '0',
     videoCodecs: (q.get('prefer') ?? 'video/AV1,video/H264,video/VP9,video/VP8').split(','),
     log: (...a) => app.logs.push(a.join(' ')),
   });
@@ -88,6 +89,20 @@
   } else {
     app.share = (on) => session.setUplink(on ? screen() : null);
   }
+
+  /** Host: frames each guest's downlink encoder made itself, by peer id. */
+  app.encodedBy = async () => {
+    const out = {};
+    for (const [id, entry] of session.links) {
+      const sender = entry.link.pc.getTransceivers()[0].sender;
+      let n = 0;
+      (await sender.getStats()).forEach((r) => {
+        if (r.type === 'outbound-rtp') n += r.framesEncoded ?? 0;
+      });
+      out[id] = n;
+    }
+    return out;
+  };
 
   /** The codec (MIME type) of the video this page receives from the host, or null. */
   app.inbound = async () => {

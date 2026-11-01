@@ -26,6 +26,7 @@ interface App {
   color(id?: string): string | null;
   inbound(): Promise<string | null>;
   tracks: number;
+  encodedBy(): Promise<Record<string, number>>;
 }
 
 let browser: Browser;
@@ -180,6 +181,24 @@ describe("guests' streams relayed by the host", () => {
     expect(await inbound(bob)).toBe('video/H264');
     expect(await inbound(dan)).toBe('video/AV1');
     expect(await inbound(eve)).toBe('video/VP9');
+
+    // The host's own stream is encoded once, in AV1, for every viewer on AV1; Bob (H.264) and
+    // Eve (VP9) keep an encoder of their own.
+    type Host = {
+      app: { session: { encoderInfo(): Promise<unknown> }; encodedBy: App['encodedBy'] };
+    };
+    await expect
+      .poll(() => host.evaluate(() => (window as unknown as Host).app.session.encoderInfo()), {
+        timeout: 10000,
+      })
+      .toMatchObject({ codec: 'video/AV1' });
+    const encodedBy = () => host.evaluate(() => (window as unknown as Host).app.encodedBy());
+    const before = await encodedBy();
+    await new Promise((r) => setTimeout(r, 1500));
+    const after = await encodedBy();
+    const made = (id: string) => after[id]! - before[id]!;
+    for (const id of ['ana-0001', 'cy-00001', 'dan-0001']) expect(made(id), id).toBe(0);
+    for (const id of ['bob-0001', 'eve-0001']) expect(made(id), id).toBeGreaterThan(5);
 
     // Ana's AV1 stream: forwarded to Cy, decoded and encoded again in H.264 for Bob.
     await ana.evaluate(() => (window as unknown as { app: App }).app.share(true));

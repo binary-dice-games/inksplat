@@ -113,6 +113,12 @@ export interface SessionOptions {
    */
   forwardCodecs?: string[];
   /**
+   * Host, with forwarding and `forwardCodecs`: encode the host's own stream once (in the first
+   * of `forwardCodecs` the browser can) and forward it to every viewer on that codec, instead of
+   * one encoder per viewer; viewers on another codec keep their own. Default true.
+   */
+  sharedEncoder?: boolean;
+  /**
    * Receives one line per step of making a connection (arguments as for console.log):
    * trackers, announces, offers, answers, ICE and channel states. No secrets are logged.
    */
@@ -174,6 +180,15 @@ export class Session {
   setUplink(stream: MediaStream | null): void;
   /** How a guest's video reaches the viewers: forwarded frames, or decoded and encoded again. */
   readonly relayMode: 'forward' | 'reencode';
+  /**
+   * Host: the encoder that sends the host's own stream to the viewers once it runs (`powerEfficient`
+   * true: hardware), or null when each link encodes on its own.
+   */
+  encoderInfo(): Promise<{
+    codec: string;
+    implementation?: string;
+    powerEfficient?: boolean;
+  } | null>;
   close(): void;
   refreshPaths(): Promise<void>;
 }
@@ -232,6 +247,8 @@ export class FrameRouter<F extends RoutedFrame = RoutedFrame> {
   setOutputCodec(key: unknown, codec: string): void;
   /** Whether output `key` re-encodes the source (its codec differs from the source's). */
   reencodes(key: unknown): boolean;
+  /** The source's frames now come another way: every output waits for a key frame again. */
+  reset(): void;
   setOutputId(key: unknown, id: string): void;
   removeOutput(key: unknown): void;
   waiting(): boolean;

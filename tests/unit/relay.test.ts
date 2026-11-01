@@ -176,6 +176,35 @@ describe('the frame router', () => {
     expect(got.cy).toEqual(['ana', 'host-for-cy']);
   });
 
+  it("sends the host's own stream from a shared encoder to outputs on its codec", () => {
+    const ownAsked: unknown[] = [];
+    const encoder: { codec?: string } = {}; // the shared encoder's codec, once it runs
+    const router = new FrameRouter<Fake>({
+      requestKeyFrame: () => {},
+      requestOutputKeyFrame: (key) => ownAsked.push(key),
+      codecOf: (s) => (s === 'host' ? encoder.codec : undefined),
+      copy: (f, rtpTimestamp) => ({ from: f.from, type: f.type, rtpTimestamp }),
+      setTimer: (fn) => timers.push(fn),
+      clearTimer: () => {},
+    });
+    const timers: (() => void)[] = [];
+    const got: Record<string, string[]> = { cy: [], dan: [] };
+    router.addOutput('cy', 'cy', (f) => got.cy!.push((f as Fake).from), 'video/AV1');
+    router.addOutput('dan', 'dan', (f) => got.dan!.push((f as Fake).from), 'video/H264');
+    router.setSource('host');
+    // Not running yet: every output takes its own encoder.
+    router.own('cy', 'host', frame('cy-own', 'key', 1));
+    expect(got).toEqual({ cy: ['cy-own'], dan: [] });
+    encoder.codec = 'video/AV1';
+    router.reset();
+    timers.shift()?.(); // the wait of the first request ends: asks again
+    expect(ownAsked).toEqual(['dan']);
+    router.input('host', frame('shared', 'key', 2));
+    router.own('cy', 'host', frame('cy-own', 'delta', 3)); // cy now takes the shared frames
+    router.own('dan', 'host', frame('dan-own', 'key', 3));
+    expect(got).toEqual({ cy: ['cy-own', 'shared'], dan: ['dan-own'] });
+  });
+
   it('treats an unknown codec as a match', () => {
     const router = new FrameRouter<Fake>({ requestKeyFrame: () => {}, copy: (f) => f });
     router.addOutput('cy', 'cy', () => {});
