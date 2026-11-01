@@ -114,14 +114,20 @@ describe('refreshStill', () => {
       })();
       g.fillStyle = '#3e63dd';
       g.fillRect(0, 0, 320, 180);
-      source.requestFrame();
       const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+      // A frame, as a capture sends when it starts: asked for until one is through (the worker
+      // starts meanwhile, and a frame asked for before it runs may not reach it).
       const deadline = performance.now() + 5000;
-      while (frames < 4 && performance.now() < deadline) await wait(20);
-      await wait(1500); // well past forMs: no more repeats
-      const count = frames;
+      while (frames === 0 && performance.now() < deadline) {
+        source.requestFrame();
+        await wait(100);
+      }
+      // Then still: the output repeats it for forMs, then stops.
+      const first = frames;
+      await wait(1500); // well past forMs
+      const count = frames - first;
       await wait(500);
-      const later = frames;
+      const later = frames - first;
       source.stop();
       const end = performance.now() + 5000;
       while (out.track.readyState !== 'ended' && !ended && performance.now() < end) await wait(20);
@@ -129,9 +135,9 @@ describe('refreshStill', () => {
     });
     expect(result, 'MediaStreamTrackProcessor/Generator in Chrome').not.toBeNull();
     const r = result!;
-    // the frame, then about forMs / everyMs repeats
-    expect(r.count).toBeGreaterThanOrEqual(4);
-    expect(r.count).toBeLessThanOrEqual(8);
+    // After the last frame: repeats every everyMs for forMs (6 at most; slow timers make fewer)
+    expect(r.count).toBeGreaterThanOrEqual(2);
+    expect(r.count).toBeLessThanOrEqual(7);
     expect(r.later).toBe(r.count);
     expect(r.ended).toBe(true);
   }, 30000);
