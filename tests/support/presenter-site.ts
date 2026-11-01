@@ -6,7 +6,7 @@ import type { Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { expect } from 'vitest';
+import { expect, onTestFailed } from 'vitest';
 import { buildSite } from '../../scripts/build-site.mjs';
 import { launchChrome } from './browser';
 import { FakeTracker } from './fake-tracker';
@@ -80,6 +80,7 @@ export class PresenterSite {
   ): Promise<Page> {
     const page = await (await this.context()).newPage();
     page.on('pageerror', (e) => console.error('[presenter]', e.message));
+    logOnFailure(page, 'presenter');
     await fakeDisplay(page, surface, size);
     // `tracker: false` points the session at a dead tracker (viewers must join with a code).
     const tracker = options.tracker === false ? 'ws://127.0.0.1:1' : this.tracker.url;
@@ -115,11 +116,27 @@ export class PresenterSite {
   async joinViewer(link: string, name = 'Ana', page?: Page): Promise<Page> {
     const viewer = page ?? (await (await this.context()).newPage());
     viewer.on('pageerror', (e) => console.error('[viewer]', e.message));
+    if (!page) logOnFailure(viewer, `viewer ${name}`);
     await viewer.goto(link);
     await viewer.locator('#name').fill(name);
     await viewer.locator('#joinForm button[type=submit]').click();
     return viewer;
   }
+}
+
+/**
+ * Keeps the video lines of `page`'s session log (codecs, relay, shared encoder) and prints them
+ * if the current test fails: what the browser chose is otherwise invisible in CI.
+ */
+function logOnFailure(page: Page, who: string): void {
+  const lines: string[] = [];
+  page.on('console', (m) => {
+    const text = m.text();
+    if (/^\[inksplat\].*(video|codec|relay|encoder)/.test(text)) lines.push(text);
+  });
+  onTestFailed(() => {
+    console.log(`--- ${who}: video log\n${lines.slice(-60).join('\n') || '(empty)'}`);
+  });
 }
 
 /**

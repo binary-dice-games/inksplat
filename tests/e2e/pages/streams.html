@@ -14,14 +14,20 @@
   const color = q.get('color');
   const app = (window.app = { role, errors: [], logs: [], state: null });
 
-  /** A canvas of one colour, with a moving square so frames keep coming. */
-  function screen() {
+  /**
+   * A canvas of one colour, with a moving square so frames keep coming. `stalled`: it sends no
+   * frame until `app.go()`.
+   */
+  function screen(stalled = false) {
     const c = document.createElement('canvas');
     c.width = 320;
     c.height = 180;
     const g = c.getContext('2d');
     let n = 0;
+    let going = !stalled;
+    app.go = () => (going = true);
     setInterval(() => {
+      if (!going) return;
       g.fillStyle = color;
       g.fillRect(0, 0, 320, 180);
       g.fillStyle = '#fff';
@@ -32,11 +38,18 @@
 
   // `noav1`: this browser cannot receive AV1 (as Safari without hardware support): its offer
   // leaves it out.
-  if (q.get('noav1') === '1') {
+  // `only`: it can receive only this codec (its offer lists nothing else).
+  // `prefer`: its offer lists these first (default AV1, H.264, VP9, VP8).
+  if (q.get('noav1') === '1' || q.get('only')) {
+    const only = q.get('only');
     const caps = RTCRtpReceiver.getCapabilities.bind(RTCRtpReceiver);
     RTCRtpReceiver.getCapabilities = (kind) => {
       const c = caps(kind);
-      return c && { ...c, codecs: c.codecs.filter((x) => !/av1/i.test(x.mimeType)) };
+      const keep = (x) =>
+        only
+          ? x.mimeType.toLowerCase() === only.toLowerCase() || /rtx|red|fec/i.test(x.mimeType)
+          : !/av1/i.test(x.mimeType);
+      return c && { ...c, codecs: c.codecs.filter(keep) };
     };
   }
 
@@ -56,7 +69,8 @@
     iceServers: [],
     forwardFrames: q.get('forward') !== '0',
     forwardCodecs: q.get('fcodecs') ? q.get('fcodecs').split(',') : undefined,
-    videoCodecs: ['video/AV1', 'video/H264', 'video/VP9', 'video/VP8'],
+    sharedEncoder: q.get('shared') !== '0',
+    videoCodecs: (q.get('prefer') ?? 'video/AV1,video/H264,video/VP9,video/VP8').split(','),
     log: (...a) => app.logs.push(a.join(' ')),
   });
   app.session = session;
@@ -70,7 +84,7 @@
   });
 
   if (role === 'host') {
-    app.stream = screen();
+    app.stream = screen(q.get('stalled') === '1');
     session.mediaParams({ fps: 10, maxBitrate: 400000 });
     session.setMedia(app.stream);
     /** Shows a guest's uplink here and asks it to send. */
@@ -81,6 +95,20 @@
   } else {
     app.share = (on) => session.setUplink(on ? screen() : null);
   }
+
+  /** Host: frames each guest's downlink encoder made itself, by peer id. */
+  app.encodedBy = async () => {
+    const out = {};
+    for (const [id, entry] of session.links) {
+      const sender = entry.link.pc.getTransceivers()[0].sender;
+      let n = 0;
+      (await sender.getStats()).forEach((r) => {
+        if (r.type === 'outbound-rtp') n += r.framesEncoded ?? 0;
+      });
+      out[id] = n;
+    }
+    return out;
+  };
 
   /** The codec (MIME type) of the video this page receives from the host, or null. */
   app.inbound = async () => {

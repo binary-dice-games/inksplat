@@ -165,11 +165,15 @@ On the host (`MediaController` in `collab-session.js`, `FrameRouter` for the rou
   frames pass (with the output's timestamp); otherwise its track is the placeholder and the
   forwarded frames are written instead; with no source nothing is written.
 - **Codec per link.** Forwarded frames decode only where the source's uplink and the viewer's
-  downlink use the same codec. The host picks each transceiver's codec when it answers: the
-  first of `forwardCodecs` (inksplat: AV1, H.264, VP8; `packages/defaults` `FORWARD_CODECS`)
-  that the guest's offer lists and the host's browser can, and answers with that codec alone
-  (with its retransmission and error-correction helpers; for H.264 packetization mode 1 and
-  constrained baseline first). A downlink whose codec differs from the shown source's uplink
+  downlink use the same codec. The host picks each transceiver's codec: the first of
+  `forwardCodecs` (inksplat: AV1, H.264, VP8; `packages/defaults` `FORWARD_CODECS`; without
+  it, the guest's own order) that the guest's offer lists and the host's browser can. The
+  **uplink** gets it by an answer with that codec alone (with its retransmission and
+  error-correction helpers; for H.264 packetization mode 1 and constrained baseline first): the
+  guest sends with the first codec of the answer. The **downlink** cannot: Chrome sends with
+  the first codec of the guest's offer whatever the answer lists (tested), so once negotiated
+  the host sets `encodings[0].codec` on the sender; where that fails the router goes by the
+  codec really sent (the offer's first). A downlink whose codec differs from the shown source's uplink
   (say a Safari viewer without AV1 while a Chrome guest shares in AV1) **re-encodes**: its
   sender takes the source's decoded track and the router passes that sender's own frames
   (`FrameRouter.reencodes`), asking that sender for a key frame when it starts. Tried in Chrome
@@ -210,6 +214,35 @@ slower link than the source's loses frames and asks for key frames (coalesced, 4
 rate is low by design (`spec/03`), so this stays within the bitrate cap. Per-viewer adaptation
 would need simulcast or transcoding and is out of scope. The host's own stream keeps today's
 per-link encoders.
+
+### 4.5 One encoder for the host's own stream
+
+Before, the host's own stream had one encoder per viewer: N encodes of the same picture, which
+at 4K and 10 viewers is most of a CPU in software. With forwarding and `forwardCodecs` the host
+encodes it once (`SharedEncoder`) and the router forwards those frames, like a guest's, to every
+viewer whose downlink uses that codec; a viewer on another codec keeps its own encoder fed with
+the stream (`reencodes`).
+
+- **The encoder** is a connection of the page to itself: the sending side's encoded frames go
+  to the router and on to the receiving side, which decodes them and shows them nowhere.
+  Measured: a receiving side that drops the frames asks for a key frame every 0.4 s, and a
+  sending side that drops them stays at the start bitrate (~280 kbit/s, no feedback); a
+  decoder costs far less than an encoder. The router uses it once connected (`reset`: every
+  output waits for its key frame); until then each link encodes on its own.
+- **Codec**: the first of `forwardCodecs` the browser can send and receive. The presenter page
+  orders `FORWARD_CODECS` with the codecs this machine encodes in hardware first
+  (`mediaCapabilities.encodingInfo`, `powerEfficient`; `viewer/src/codec-choice.ts`), so a Mac
+  without AV1 hardware encodes in H.264 on its media engine. The page cannot force a hardware
+  encoder: the browser picks it for the codec. `Session.encoderInfo()` and the log
+  (`shared encoder: ...`) say which it took.
+- **Rate**: one encoder serves everybody, as for a guest's stream (4.4): capped by the
+  settings, not adapted per viewer; a viewer that loses frames asks for a key frame (read from
+  the downlink senders' PLI counters, as for a guest).
+- **Stall guard**: once ready with a track, the shared encoder must send a frame within 3 s
+  (a capture sends one when it starts, and the page repeats a still one); otherwise the host
+  drops it for the rest of the session and goes back to one encoder per link. A stalled shared
+  encoder would leave every viewer without video.
+- `sharedEncoder: false` (session option) keeps one encoder per link.
 
 ## 5. Protocol
 

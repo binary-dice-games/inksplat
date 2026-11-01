@@ -11,7 +11,8 @@
  * transceiver, `setUplink`, `uplinkParams`, `uplink`, `setRelay`, `FrameRouter` and the
  * `up`/`key` control messages (spec/07_participant_streaming/DESIGN.md sections 4 and 6), and
  * the forwarded codec chosen per link (`forwardCodecs`, `sdpCodecs`; a viewer on another codec
- * gets the source re-encoded); a guest announces only the video of the link it keeps (`adopt`).
+ * gets the source re-encoded); a guest announces only the video of the link it keeps (`adopt`);
+ * the host's own stream is encoded once for all viewers (`SharedEncoder`, `encoderInfo`).
  * It imports nothing.
  *
  *   import { createSession } from './collab-session.js';
@@ -558,6 +559,16 @@ export class FrameRouter {
     this.outputs.delete(key);
   }
 
+  /** The codec output `key` really sends in; it then waits for a key frame. (inksplat addition) */
+  setOutputCodec(key, codec) {
+    const out = this.outputs.get(key);
+    if (out) {
+      out.codec = codec;
+      out.waiting = true;
+      this.want();
+    }
+  }
+
   /**
    * Whether output `key` cannot take the source's frames as they are (their codecs differ), so
    * its own encoder sends the decoded source. (inksplat addition)
@@ -599,15 +610,26 @@ export class FrameRouter {
    */
   own(key, self, frame) {
     const out = this.outputs.get(key);
+    // The host's own stream comes from each output's encoder unless one shared encoder sends it
+    // (`codecOf(self)` known): then only outputs on another codec use their own.
+    const ownStream = this.source === self && this.codecOf(self) === undefined;
     if (
       out &&
       out.id !== null &&
       this.source !== null &&
       out.id !== this.source &&
-      (this.source === self || this.mismatch(out))
+      (ownStream || this.mismatch(out))
     ) {
       this.deliver(out, frame);
     }
+  }
+
+  /** The source's frames now come another way: every output waits for a key frame again. */
+  reset() {
+    for (const out of this.outputs.values()) {
+      out.waiting = true;
+    }
+    this.want();
   }
 
   /** A viewer lost frames (it asked the sender for a key frame). */
@@ -710,7 +732,9 @@ export function sdpCodecs(sdp, mid) {
 function pickForwardCodec(offered, wanted, kind) {
   const Api = kind === 'send' ? globalThis.RTCRtpSender : globalThis.RTCRtpReceiver;
   const caps = (Api?.getCapabilities?.('video')?.codecs ?? []).map((c) => c.mimeType.toLowerCase());
-  return wanted.find((m) => offered.includes(m.toLowerCase()) && caps.includes(m.toLowerCase()));
+  return wanted.find(
+    (m) => !AUX_CODEC.test(m) && offered.includes(m.toLowerCase()) && caps.includes(m.toLowerCase()),
+  );
 }
 
 /** H.264 entries first that every decoder takes: packetization mode 1, constrained baseline. */
@@ -757,6 +781,125 @@ async function forceKeyFrame(sender) {
 }
 
 /**
+ * Host: one encoder for the host's own stream, whose frames the router forwards to every viewer
+ * on its codec, instead of one encoder per viewer (inksplat addition; spec/07 section 4.5). It is
+ * a connection of the page to itself: the sending side's encoded frames go to `onFrame` and on to
+ * the receiving side, which decodes them and shows them nowhere. The receiving side must take the
+ * frames: a receiver that drops them asks for a key frame every few hundred milliseconds, and a
+ * sender whose frames go nowhere stays at the start bitrate (about 300 kbit/s).
+ */
+class SharedEncoder {
+  /**
+   * @param {string} codec MIME type to encode in
+   * @param {(frame: any) => void} onFrame each encoded frame (before it goes on)
+   * @param {() => void} onReady called once frames can flow
+   * @param {() => void} onStall called when it has a track and is ready but no frame comes
+   *        within `STALL_MS`
+   */
+  constructor(codec, onFrame, onReady, onStall) {
+    this.codec = codec;
+    this.ready = false;
+    this.closed = false;
+    this.track = null;
+    this.onStall = onStall;
+    this.frameAt = 0;
+    this.stallTimer = null;
+    this.out = new RTCPeerConnection({ encodedInsertableStreams: true });
+    this.in = new RTCPeerConnection({ encodedInsertableStreams: true });
+    this.out.onicecandidate = (e) => e.candidate && this.in.addIceCandidate(e.candidate).catch(() => {});
+    this.in.onicecandidate = (e) => e.candidate && this.out.addIceCandidate(e.candidate).catch(() => {});
+    const transceiver = this.out.addTransceiver('video', { direction: 'sendonly' });
+    this.sender = transceiver.sender;
+    const all = RTCRtpSender.getCapabilities('video')?.codecs ?? [];
+    transceiver.setCodecPreferences(
+      all
+        .filter((c) => c.mimeType.toLowerCase() === codec.toLowerCase() || AUX_CODEC.test(c.mimeType))
+        .sort((a, b) => (AUX_CODEC.test(a.mimeType) ? 9 : h264Rank(a)) - (AUX_CODEC.test(b.mimeType) ? 9 : h264Rank(b))),
+    );
+    const { readable, writable } = this.sender.createEncodedStreams();
+    const writer = writable.getWriter();
+    pump(readable, (frame) => {
+      this.frameAt = performance.now();
+      onFrame(frame);
+      writer.write(frame).catch(() => {});
+    });
+    this.in.ontrack = (e) => {
+      const r = e.receiver.createEncodedStreams();
+      r.readable.pipeTo(r.writable).catch(() => {});
+    };
+    this.out.addEventListener('connectionstatechange', () => {
+      if (this.out.connectionState === 'connected' && !this.ready && !this.closed) {
+        this.ready = true;
+        onReady();
+        this.expectFrame();
+      }
+    });
+    this.negotiate().catch((e) => dbg('shared encoder not started:', e?.message ?? e));
+  }
+
+  /** @private */
+  async negotiate() {
+    await this.out.setLocalDescription();
+    await this.in.setRemoteDescription(this.out.localDescription);
+    await this.in.setLocalDescription();
+    await this.out.setRemoteDescription(this.in.localDescription);
+  }
+
+  /** The track to encode (the host's own, while it is the source), or null. */
+  setTrack(track) {
+    if (track !== this.track) {
+      this.track = track;
+      this.sender.replaceTrack(track).catch(() => {});
+      this.expectFrame();
+    }
+  }
+
+  /**
+   * @private Once ready with a track, a frame must come within `STALL_MS` (a capture sends one
+   * when it starts, and the page repeats a still one); otherwise `onStall`.
+   */
+  expectFrame() {
+    clearTimeout(this.stallTimer);
+    if (!this.ready || !this.track || this.closed) {
+      return;
+    }
+    const since = performance.now();
+    this.stallTimer = setTimeout(() => {
+      if (!this.closed && this.track && this.frameAt < since) {
+        this.onStall();
+      }
+    }, SharedEncoder.STALL_MS);
+  }
+
+  keyFrame() {
+    void forceKeyFrame(this.sender);
+  }
+
+  /** Which encoder the browser uses: `{codec, implementation, powerEfficient}`. */
+  async info() {
+    const out = { codec: this.codec };
+    (await this.out.getStats()).forEach((r) => {
+      if (r.type === 'outbound-rtp' && r.kind === 'video') {
+        out.implementation = r.encoderImplementation;
+        out.powerEfficient = r.powerEfficientEncoder;
+      }
+    });
+    return out;
+  }
+
+  close() {
+    this.closed = true;
+    this.ready = false;
+    clearTimeout(this.stallTimer);
+    this.out.close();
+    this.in.close();
+  }
+}
+
+/** How long a ready shared encoder with a track may go without a frame before it is dropped. */
+SharedEncoder.STALL_MS = 3000;
+
+/**
  * The video of a session (spec/07_participant_streaming/DESIGN.md section 4). Every guest offer
  * carries two video transceivers: the **downlink** (host to guest, `recvonly` at the guest) and
  * the **uplink** (guest to host, `sendonly` at the guest, nothing sent until the host asks).
@@ -782,8 +925,14 @@ class MediaController {
     this.relay = null;
     this.relaySet = false;
     this.encoded = false;
-    /** Codecs to forward, best first (MIME types); chosen per transceiver from the offer. */
-    this.forwardCodecs = ['video/VP8'];
+    /**
+     * Codecs to forward, best first (MIME types); chosen per transceiver from the offer. Null:
+     * each guest's own order (the first codec of its offer that this browser can).
+     */
+    this.forwardCodecs = null;
+    /** Whether the host's own stream is encoded once for all viewers (`SharedEncoder`). */
+    this.shareEncoder = true;
+    this.shared = null;
     this.router = null;
     this.placeholderTrack = null;
     this.pliTimer = null;
@@ -821,7 +970,8 @@ class MediaController {
     if (this.encoded) {
       this.router = new FrameRouter({
         requestKeyFrame: (source) => this.keyFrameOf(source),
-        codecOf: (source) => this.uplinkCodecOf(source),
+        codecOf: (source) =>
+          source === this.self ? (this.shared?.ready ? this.shared.codec : undefined) : this.uplinkCodecOf(source),
         requestOutputKeyFrame: (rec) => void forceKeyFrame(rec.sender),
         copy: (frame, rtpTimestamp) =>
           new RTCEncodedVideoFrame(frame, { metadata: { ...frame.getMetadata(), rtpTimestamp } }),
@@ -889,9 +1039,14 @@ class MediaController {
     this.links.set(pc, rec);
     const offer = pc.remoteDescription?.sdp;
     if (this.encoded) {
-      rec.downCodec = pickForwardCodec(sdpCodecs(offer, down.mid), this.forwardCodecs, 'send');
+      const offered = sdpCodecs(offer, down.mid);
+      rec.downCodec = pickForwardCodec(offered, this.forwardCodecs ?? offered, 'send');
     }
-    this.codecs(down, rec.downCodec);
+    // With forwarding the downlink's codec is set on its sender once negotiated (`answered`):
+    // Chrome sends with the first codec of the guest's offer whatever the answer lists.
+    if (!this.encoded) {
+      this.codecs(down);
+    }
     if (this.encoded) {
       const { readable, writable } = down.sender.createEncodedStreams();
       const writer = writable.getWriter();
@@ -901,7 +1056,8 @@ class MediaController {
     if (up) {
       up.direction = 'recvonly';
       if (this.encoded) {
-        rec.upCodec = pickForwardCodec(sdpCodecs(offer, up.mid), this.forwardCodecs, 'receive');
+        const offered = sdpCodecs(offer, up.mid);
+        rec.upCodec = pickForwardCodec(offered, this.forwardCodecs ?? offered, 'receive');
       }
       this.codecs(up, rec.upCodec);
       dbg('video codecs of the link:', rec.downCodec ?? '?', 'down,', rec.upCodec ?? '?', 'up');
@@ -922,6 +1078,42 @@ class MediaController {
     });
     down.sender.replaceTrack(this.trackFor(rec)).catch(() => {});
     this.apply(down.sender);
+  }
+
+  /**
+   * Host: after setLocalDescription(answer). With forwarding, the downlink sends in its chosen
+   * codec (`encodings[0].codec`, among those negotiated); where that cannot be set, the codec it
+   * really sends (the first negotiated) is what the router goes by. (inksplat addition)
+   */
+  async answered(pc) {
+    const rec = this.links.get(pc);
+    if (!this.encoded || !rec) {
+      return;
+    }
+    const sender = rec.sender;
+    const p = sender.getParameters();
+    const negotiated = (p.codecs ?? []).filter((c) => !AUX_CODEC.test(c.mimeType));
+    const want = rec.downCodec?.toLowerCase();
+    const entry = negotiated
+      .filter((c) => c.mimeType.toLowerCase() === want)
+      .sort((a, b) => h264Rank(a) - h264Rank(b))[0];
+    if (entry && p.encodings?.length) {
+      try {
+        p.encodings[0].codec = entry;
+        await sender.setParameters(p);
+        dbg('video downlink codec:', entry.mimeType);
+        return;
+      } catch (e) {
+        dbg('video downlink codec not set:', e?.message ?? e);
+      }
+    }
+    const actual = negotiated[0]?.mimeType;
+    if (actual && actual.toLowerCase() !== want) {
+      rec.downCodec = actual;
+      this.router.setOutputCodec(rec, actual);
+      rec.sender.replaceTrack(this.trackFor(rec)).catch(() => {});
+      dbg('video downlink codec:', actual, '(the guest\'s first)');
+    }
   }
 
   /** Host: the link of `pc` belongs to guest `peerId` (after its hello). */
@@ -973,6 +1165,9 @@ class MediaController {
   trackFor(rec) {
     const source = this.source();
     if (source !== null && source === this.self) {
+      if (this.shared?.ready && !this.router.reencodes(rec)) {
+        return this.placeholder(); // the shared encoder's frames are written instead
+      }
       return this.track() ?? this.placeholder();
     }
     if (source === null || source === rec.peerId) {
@@ -1028,14 +1223,81 @@ class MediaController {
 
   /** @private */
   retrack() {
+    const own = this.source() !== null && this.source() === this.self ? this.track() : null;
+    if (own && !this.shared) {
+      this.startShared();
+    }
+    this.shared?.setTrack(own);
     for (const rec of this.links.values()) {
       rec.sender.replaceTrack(this.trackFor(rec)).catch(() => {});
     }
   }
 
+  /** @private Host: the shared encoder, in the first forwarded codec this browser can do. */
+  startShared() {
+    // Without `forwardCodecs` each viewer's link has its own codec: nothing to share.
+    if (!this.encoded || !this.shareEncoder || !this.forwardCodecs || typeof RTCRtpSender?.getCapabilities !== 'function') {
+      return;
+    }
+    const can = (Api) => (Api.getCapabilities('video')?.codecs ?? []).map((c) => c.mimeType.toLowerCase());
+    const send = can(RTCRtpSender);
+    const receive = can(RTCRtpReceiver);
+    const codec = this.forwardCodecs.find((m) => send.includes(m.toLowerCase()) && receive.includes(m.toLowerCase()));
+    if (!codec) {
+      return;
+    }
+    try {
+      this.shared = new SharedEncoder(
+        codec,
+        // Until it is ready the links encode on their own: its frames would mix with theirs.
+        (frame) => this.shared?.ready && this.router.input(this.self, frame),
+        () => {
+          this.apply(this.shared.sender);
+          this.router.reset();
+          this.retrack();
+          this.watchLoss();
+          this.sharedInfoTimer = setTimeout(async () => {
+            const info = await this.shared?.info().catch(() => null);
+            dbg('shared encoder:', info?.codec, info?.implementation ?? '?', info?.powerEfficient ? '(hardware)' : '');
+          }, 5000);
+        },
+        () => this.dropShared('no frames'),
+      );
+      this.apply(this.shared.sender);
+      dbg('shared encoder: starting in', codec);
+    } catch (e) {
+      dbg('shared encoder not started:', e?.message ?? e);
+      this.shared = null;
+    }
+  }
+
+  /**
+   * @private The shared encoder failed: back to one encoder per link for the rest of the
+   * session.
+   */
+  dropShared(why) {
+    dbg('shared encoder dropped:', why, '- one encoder per link');
+    this.shareEncoder = false;
+    clearTimeout(this.sharedInfoTimer);
+    this.shared?.close();
+    this.shared = null;
+    this.router?.reset();
+    this.retrack();
+    this.watchLoss();
+  }
+
+  /** Host: which encoder sends the host's own stream to the viewers, or null (one per link). */
+  encoderInfo() {
+    return this.shared?.ready ? this.shared.info() : Promise.resolve(null);
+  }
+
   /** @private Asks `source` for a key frame: the host's own encoders, or a guest's uplink. */
   keyFrameOf(source) {
     if (source === this.self) {
+      if (this.shared?.ready) {
+        this.shared.keyFrame(); // links on another codec are asked by the router
+        return;
+      }
       for (const rec of this.links.values()) {
         void forceKeyFrame(rec.sender);
       }
@@ -1045,13 +1307,14 @@ class MediaController {
   }
 
   /**
-   * @private While a guest's frames are forwarded, a viewer that loses some asks the host's
+   * @private While frames are forwarded (a guest's, or the shared encoder's), a viewer that loses some asks the host's
    * sender for a key frame (PLI/FIR) and the host's code never hears it: the counters in the
    * sender's stats tell, once a second.
    */
   watchLoss() {
-    const remote = this.encoded && this.relay !== null && this.relay !== this.self;
-    if (!remote) {
+    const source = this.source();
+    const forwarded = this.encoded && source !== null && (source !== this.self || !!this.shared?.ready);
+    if (!forwarded) {
       clearInterval(this.pliTimer);
       this.pliTimer = null;
       return;
@@ -1085,6 +1348,9 @@ class MediaController {
     this.pliTimer = null;
     this.router?.stop();
     this.placeholderTrack?.stop();
+    clearTimeout(this.sharedInfoTimer);
+    this.shared?.close();
+    this.shared = null;
   }
 
   /** Host: {fps, maxBitrate, scale, contentHint}, applied to every sender now and later. */
@@ -1096,6 +1362,9 @@ class MediaController {
     }
     for (const rec of this.links.values()) {
       this.apply(rec.sender);
+    }
+    if (this.shared) {
+      this.apply(this.shared.sender);
     }
   }
 
@@ -1255,6 +1524,7 @@ async function makeAnswer(iceServers, offerSdp, gatherMs, media) {
   await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
   media?.prepareAnswer(pc);
   await pc.setLocalDescription(await pc.createAnswer());
+  await media?.answered(pc);
   await gathered(pc, gatherMs);
   return { link, pc, sdp: pc.localDescription.sdp };
 }
@@ -1786,6 +2056,7 @@ export class Session {
     if (options.forwardCodecs?.length) {
       this.media.forwardCodecs = [...options.forwardCodecs];
     }
+    this.media.shareEncoder = options.sharedEncoder !== false;
     this.media.enableForwarding(this.role === 'host' && options.forwardFrames !== false);
   }
 
@@ -1827,6 +2098,16 @@ export class Session {
       throw new SessionError('role', 'only a guest has an uplink');
     }
     this.media.setUplink(stream);
+  }
+
+  /**
+   * Host: the encoder that sends the host's own stream to the viewers, once it runs:
+   * `{codec, implementation, powerEfficient}` (from the sender's statistics; `powerEfficient`
+   * true means hardware), or null when each link encodes on its own. (inksplat addition)
+   */
+  encoderInfo() {
+    this.hostOnly();
+    return this.media.encoderInfo();
   }
 
   /** How the host sends a guest's video: `forward` (encoded frames) or `reencode`. */

@@ -31,6 +31,7 @@ import type {
   Stage,
   VideoSettings,
 } from '@inksplat/defaults';
+import { hardwareFirst } from './codec-choice';
 import { fitScale } from './display-capture';
 import type { Settings } from './settings';
 
@@ -166,6 +167,9 @@ export class ShareHost {
   static async start(options: ShareHostOptions): Promise<ShareHost> {
     const { settings } = options;
     let host: ShareHost | null = null;
+    // Codecs this machine encodes in hardware first: the host's own stream is encoded once in
+    // the first of them that every viewer can take.
+    const forwardCodecs = await hardwareFirst(FORWARD_CODECS);
     const session = await createSession({
       role: 'host',
       protocol: PROTOCOL,
@@ -177,7 +181,7 @@ export class ShareHost {
         { kind: 'manual' },
       ],
       accept: (channel, message, from) => host?.accept(channel, message, from) ?? false,
-      forwardCodecs: [...FORWARD_CODECS],
+      forwardCodecs,
       ...(options.forwardFrames === false ? { forwardFrames: false } : {}),
     });
     host = new ShareHost(session, options);
