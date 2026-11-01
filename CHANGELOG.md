@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The eraser draws a dashed trail along its way while it is held, like a selection drag with the pointer.
 - The presenter controls are redesigned: grouped sections (Invite, People, Screen, Board), switches for the options, initials for the people, a button to hide the panel, and Settings and End session always in view. Long names are cut with an ellipsis (the full text shows on hover) instead of making the panel scroll sideways.
 - Zoomed in, a mouse drag on an empty place with the pointer selects instead of panning: pan with Space+drag, the middle button, or touch.
 
