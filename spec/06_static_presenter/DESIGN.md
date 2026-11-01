@@ -207,7 +207,7 @@ the next session (connection, name) or share (pointer).
 
 The **Tools** button folds the whiteboard toolbar away and **Controls** folds the
 panel, so neither hides the view; both states are remembered. Folding the tools
-also returns to the pointer tool. The toolbar lives in the whiteboard's shadow
+also returns to the pointer tool and hides the tool hint with the toolbar. The toolbar lives in the whiteboard's shadow
 root and is hidden with `display: none`, not the `hidden` attribute (the board
 stops redrawing a hidden toolbar).
 

@@ -28,7 +28,9 @@
  * `saveBoard` gives the files as bytes and `loadBoard` takes them so (the page saves boards as
  * zips, with the files apart from the JSON). A drag of the pointer from an empty place selects
  * several items, which are moved, coloured, removed, copied, cut and pasted together; zoomed in, a
- * mouse drag there pans only with Space held.
+ * mouse drag there pans only with Space held. A faint line under the canvases says how to use the
+ * tool in hand (or the selection) for a few seconds after it changes; `toolHints: false` or
+ * `setToolHints(false)` leaves it out.
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -1247,6 +1249,22 @@ const STRINGS = {
   yourTurn: 'Your turn to speak',
   removeFromQueue: 'Remove from the queue',
   fileArriving: 'The file is still arriving\u2026',
+  // The faint line under the canvases on how to use the tool in hand; {key} is the tool's number.
+  toolHints: {
+    cursor: 'Drag from an empty place to select \u00b7 Press {key} again for the laser, emotes or magnifier',
+    laser: 'Drag to leave a trail that fades \u00b7 Esc for the cursor',
+    emote: 'Press, move towards a face and let go \u00b7 Click an emote to grow it \u00b7 Esc for the cursor',
+    magnify: 'The wheel changes how much the lens enlarges \u00b7 Esc for the cursor',
+    pen: 'Drag to draw \u00b7 Press {key} again for another width',
+    text: 'Click to write, Enter to finish \u00b7 Press {key} again for another size',
+    sticker: 'Click to put a sticker down \u00b7 Press {key} again for the next one',
+    eraser: 'Drag over what to remove; it goes when you let go',
+    note: 'Click to put a note down, or drag out its size \u00b7 Press {key} again for another shape',
+    pin: 'Click to put a pin down \u00b7 Press {key} again for another shape',
+    arrow: 'Drag from a pin to another to tie a thread \u00b7 Press {key} again for other heads',
+    selected: 'Drag to move it \u00b7 Delete removes it \u00b7 Ctrl+C copies it \u00b7 Esc deselects',
+    group: 'Drag any of them to move them all \u00b7 Delete removes them \u00b7 Ctrl+C / Ctrl+X copy or cut \u00b7 Esc deselects',
+  },
   dragFile: 'Shift+drag it to copy it out, double click to save',
 };
 
@@ -1335,6 +1353,12 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .toolbar button[data-key]::after { content: attr(data-key); position: absolute; right: 3px; bottom: 1px; font: 9px/1 system-ui, sans-serif; opacity: .6; pointer-events: none; }
 .hint { position: absolute; padding: 3px 8px; border-radius: 6px; background: var(--wb-fg); color: var(--wb-bg); font-size: 12px; white-space: nowrap; pointer-events: none; }
 .hint[hidden] { display: none; }
+.tip { position: absolute; left: 50%; transform: translateX(-50%); max-width: min(720px, calc(100% - 120px)); padding: 2px 10px; border-radius: 999px; box-sizing: border-box;
+  background: color-mix(in srgb, var(--wb-bg) 55%, transparent); color: color-mix(in srgb, var(--wb-fg) 75%, transparent); font-size: 12px; text-align: center; pointer-events: none; user-select: none; }
+.tip { opacity: 0; visibility: hidden; transition: opacity .4s, visibility 0s .4s; }
+.tip.on { opacity: 1; visibility: visible; transition: opacity .15s; }
+.tip[hidden], .tip:empty { display: none; }
+@media (max-width: 520px) { .tip { display: none; } }
 .pages { position: absolute; top: 8px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; padding: 4px 10px; border-radius: 999px; background: var(--wb-bg); color: var(--wb-fg); box-shadow: 0 1px 6px rgba(0,0,0,.35); pointer-events: auto; }
 .pages[hidden] { display: none; }
 .pages .cell { position: relative; display: grid; }
@@ -1483,6 +1507,7 @@ export class Whiteboard {
     this.container = container;
     this.session = options.session;
     this.strings = { ...STRINGS, ...(options.strings ?? {}) };
+    this.strings.toolHints = { ...STRINGS.toolHints, ...(options.strings?.toolHints ?? {}) }; // a host may translate only some
     this.tools = (options.tools ?? ['pointer', 'pen', 'text', 'sticker', 'eraser', 'note', 'pin', 'arrow']).filter((t) => t in ICONS);
     if (!this.tools.includes('pointer')) {
       this.tools.unshift('pointer');
@@ -1505,6 +1530,9 @@ export class Whiteboard {
     this.page = 0; // the canvas shown here; each person chooses their own
     this.pages = new Map(); // peer id -> the canvas they are on (absent: the first)
     this.showPages = options.pages !== false;
+    this.toolHints = options.toolHints !== false;
+    this.toolHintMs = finite(options.toolHintMs, 0, 60000) ? options.toolHintMs : 3500;
+    this.tipKey = 'cursor'; // what the hint was last about; the hint shows when it changes
     this.cleanups = [];
     this.lastCursorSent = 0;
     this.lastPoint = null;
@@ -2322,6 +2350,7 @@ export class Whiteboard {
 
   destroy() {
     this.finishText();
+    clearTimeout(this.tipTimer);
     for (const c of this.cleanups) {
       c();
     }
@@ -2502,10 +2531,11 @@ export class Whiteboard {
     this.toolbarBox = htmlEl('div', { class: 'toolbar', role: 'toolbar', 'aria-label': 'Whiteboard', hidden: !withToolbar });
     this.popover = htmlEl('div', { class: 'pop', hidden: true });
     this.hintBox = htmlEl('div', { class: 'hint', hidden: true, role: 'status' });
+    this.tipBox = htmlEl('div', { class: 'tip', hidden: !withToolbar || !this.toolHints, 'aria-hidden': 'true' });
     this.selbar = htmlEl('div', { class: 'selbar', role: 'toolbar', 'aria-label': 'Selected item', hidden: true });
     this.queueBox = htmlEl('div', { class: 'queue', role: 'group', 'aria-label': this.strings.queue, hidden: !this.turns });
     this.pagesBox = htmlEl('div', { class: 'pages', role: 'group', 'aria-label': this.strings.canvases, hidden: !this.showPages });
-    this.root.append(this.board, this.dragLayer, this.fxLayer, this.cursorLayer, this.lens, this.toolbarBox, this.popover, this.selbar, this.hintBox, this.queueBox, this.pagesBox);
+    this.root.append(this.board, this.dragLayer, this.fxLayer, this.cursorLayer, this.lens, this.toolbarBox, this.popover, this.selbar, this.hintBox, this.tipBox, this.queueBox, this.pagesBox);
     this.container.append(this.host);
     this.defs.append(this.shadowFilter());
     for (const [name, svg] of this.stickers) {
@@ -2559,8 +2589,49 @@ export class Whiteboard {
     return s;
   }
 
+  /**
+   * @private The faint line under the canvases on how to use what is in hand: the selection, else
+   * the tool (and the pointer's mode). Empty while drawing is locked.
+   */
+  renderToolHint() {
+    if (!this.tipBox || this.tipBox.hidden) {
+      return;
+    }
+    const before = this.tipKey;
+    const key = this.group.size > 0 ? 'group' : this.selected ? 'selected' : this.readOnlyFlag ? '' : this.tool === 'pointer' ? this.style.pointerMode : this.tool;
+    if (key === before) {
+      return;
+    }
+    this.tipKey = key;
+    clearTimeout(this.tipTimer);
+    // Letting go of a selection only hides its hint: the tool did not change.
+    const selection = (k) => k === 'group' || k === 'selected';
+    if (key === '' || (selection(before) && !selection(key))) {
+      this.tipBox.classList.remove('on');
+      return;
+    }
+    const hints = this.strings.toolHints ?? {};
+    this.tipBox.textContent = (hints[key] ?? '').replaceAll('{key}', String(this.tools.indexOf(this.tool) + 1));
+    this.tipBox.classList.add('on');
+    this.tipTimer = setTimeout(() => this.tipBox.classList.remove('on'), this.toolHintMs);
+  }
+
+  /** Shows (the default) or never shows the hint on how to use the tool in hand. */
+  setToolHints(on) {
+    this.toolHints = !!on;
+    this.tipBox.hidden = !this.toolHints || this.toolbarBox.hidden;
+    clearTimeout(this.tipTimer);
+    this.tipBox.classList.remove('on');
+  }
+
+  /** Whether the hint on how to use the tool in hand is shown when the tool changes. */
+  get toolHintsShown() {
+    return this.toolHints;
+  }
+
   /** @private */
   renderToolbar() {
+    this.renderToolHint();
     if (!this.toolbarBox || this.toolbarBox.hidden) {
       return;
     }
@@ -2744,6 +2815,8 @@ export class Whiteboard {
     this.popover.style.left = `${left + 44}px`;
     this.hintBox.style.left = `${left + 44}px`;
     this.hintBox.style.top = `${top + 6}px`;
+    // Under the canvas buttons (a 42px pill at the top), and inside the area shown.
+    this.tipBox.style.top = `${Math.max(top, this.showPages ? 50 : 0)}px`;
     for (const c of this.cursors.values()) {
       this.moveCursor(c);
     }
@@ -4457,6 +4530,7 @@ export class Whiteboard {
    * and for its owner the lock. Only what the person may change is offered.
    */
   renderSelbar() {
+    this.renderToolHint();
     if (this.group.size > 0) {
       this.renderGroupBar();
       return;

@@ -1,8 +1,8 @@
 // MIT License © 2026 Binary Dice Games
 /**
  * @file Settings of the presenter page (spec/06_static_presenter): the
- * session settings plus the mouse pointer choice and the folding of the tools
- * and the panel, kept in `localStorage`. Everything read back is validated.
+ * session settings plus the mouse pointer choice, the tool hints and the folding
+ * of the tools and the panel, kept in `localStorage`. Everything read back is validated.
  */
 import { cleanSettings } from './settings';
 import type { Settings } from './settings';
@@ -15,6 +15,8 @@ export interface PresenterPrefs {
   toolsCollapsed: boolean;
   /** The controls panel is folded away. */
   panelCollapsed: boolean;
+  /** A hint on how to use each tool shows for a moment when it is picked. */
+  toolHints: boolean;
 }
 
 const KEY = 'inksplat.presenter.prefs';
@@ -27,6 +29,7 @@ export function cleanPrefs(input: unknown): PresenterPrefs {
     cursor: o.cursor === 'motion' || o.cursor === 'never' ? o.cursor : 'always',
     toolsCollapsed: o.toolsCollapsed === true,
     panelCollapsed: o.panelCollapsed === true,
+    toolHints: o.toolHints !== false,
   };
 }
 

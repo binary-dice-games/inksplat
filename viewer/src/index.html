@@ -123,6 +123,11 @@
         display: block;
         margin: 10px 0 2px;
       }
+      label.check {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
       input[type='text'] {
         width: 100%;
         padding: 8px;
@@ -689,6 +694,9 @@
           <button id="avatarClear" type="button">Remove</button>
         </div>
         <p id="avatarHint" class="muted">Shown on your cursor instead of your name.</p>
+        <label class="check">
+          <input id="toolHints" type="checkbox" /> Show a hint on how to use each tool
+        </label>
         <p><button class="primary" type="submit">Join</button></p>
         <p class="muted">
           The presenter will see your connection address. Nothing you do here is stored on a server.

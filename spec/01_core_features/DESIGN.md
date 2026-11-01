@@ -167,6 +167,13 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   3 text, 4 sticker, 5 eraser, last the colour). A number selects the tool; pressing it
   again cycles its options (pen thin/normal/thick = 2/4/8 units, text 18/28/44, each
   sticker, the palette). Options are local style, never synced.
+- **Tool hints.** A faint line under the canvas buttons says how to use what is in hand: the
+  selection (one item or several), else the tool or the pointer's mode, with the tool's number
+  (`strings.toolHints`, `{key}` for the number; a host may translate only some). It shows for
+  `toolHintMs` (3.5 s) when that changes and then fades, so it never stays over the screen; letting
+  go of a selection only hides it. Nothing shows while drawing is locked, on screens narrower than
+  520px (it would cover too much), or with `toolHints: false` / `setToolHints(false)` (the pages
+  keep the choice: the presenter's Settings, the viewer's join form).
 - **Own items.** Items carry `author`; the author can drag them (pointer tool, or the
   tool that made them). Clicking an element selects it (lines, texts and stickers with the pointer
   or their own tool) and Delete or Backspace removes the selected one; the right button does

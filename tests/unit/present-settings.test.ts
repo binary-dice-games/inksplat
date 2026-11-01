@@ -9,6 +9,7 @@ describe('cleanPrefs', () => {
         cursor: 'always',
         toolsCollapsed: false,
         panelCollapsed: false,
+        toolHints: true,
         settings: { name: 'Presenter', viewersMayDraw: true },
       });
     }
@@ -33,5 +34,7 @@ describe('cleanPrefs', () => {
     expect(cleanPrefs({ cursor: 'motion' }).cursor).toBe('motion');
     expect(cleanPrefs({ cursor: 'sometimes' }).cursor).toBe('always');
     expect(cleanPrefs({ toolsCollapsed: 'yes' }).toolsCollapsed).toBe(false);
+    expect(cleanPrefs({ toolHints: false }).toolHints).toBe(false);
+    expect(cleanPrefs({ toolHints: 'no' }).toolHints).toBe(true);
   });
 });

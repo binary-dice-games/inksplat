@@ -81,6 +81,8 @@ let downlink: MediaStream | null = null;
 let share: ShareButton | null = null;
 /** The whiteboard toolbar is folded away (remembered). */
 let folded = store('inksplat.toolsFolded') === '1';
+/** A hint on how to use each tool shows for a moment when it is picked (remembered). */
+let toolHints = store('inksplat.toolHints') !== '0';
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
 /** The picture chosen on the join form (an image data URL), or ''. */
 let avatar = cleanImageData(store('inksplat.avatar'), LIMITS.avatarChars) ?? '';
@@ -184,6 +186,7 @@ function enterApp(): void {
     readOnly: !mayDraw(stage),
     avatar,
     filePreview,
+    toolHints,
   });
   board.on('error', (e) => toast(e.message));
   board.on('page', refreshStage);
@@ -411,6 +414,12 @@ async function main(): Promise<void> {
     }
   };
   showAvatar(avatar);
+  const hintsInput = $<HTMLInputElement>('toolHints');
+  hintsInput.checked = toolHints;
+  hintsInput.addEventListener('change', () => {
+    toolHints = hintsInput.checked;
+    store('inksplat.toolHints', toolHints ? '1' : '0');
+  });
   $<HTMLInputElement>('avatar').addEventListener('change', (e) => {
     const file = (e.target as HTMLInputElement).files?.[0];
     if (file) {
