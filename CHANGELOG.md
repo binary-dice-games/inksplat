@@ -102,6 +102,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The magnifier's lens is clipped round: a square of the enlarged screen no longer shows around it.
 - Stickers can be selected, moved and erased by touching anywhere on them, not only their lines (they were often missed, notably on iPad).
 
 - The bar over a selected element shows again when the same element is selected a second time after letting it go.
