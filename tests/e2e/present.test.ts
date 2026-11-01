@@ -173,6 +173,29 @@ describe('static presenter page', () => {
     await presenter.locator('#background').selectOption('cork');
     await expect.poll(() => frame(viewer), { timeout: 15000 }).toBe('rgb(139, 94, 52)');
     await expect.poll(() => frame(presenter)).toBe('rgb(139, 94, 52)');
+    // Its textures are drawn once into bitmaps (at twice their size), which the page's CSP lets in.
+    await expect
+      .poll(() =>
+        viewer
+          .locator('#page')
+          .evaluate((e) => (getComputedStyle(e).backgroundImage.match(/blob:/g) ?? []).length),
+      )
+      .toBe(4);
+    const tiles = await viewer.locator('#page').evaluate(async (e) => {
+      const urls = [...getComputedStyle(e).backgroundImage.matchAll(/url\("(blob:[^"]+)"\)/g)];
+      return Promise.all(
+        urls.map(async ([, url]) => {
+          const image = new Image();
+          image.src = url!;
+          await image.decode();
+          return image.naturalWidth;
+        }),
+      );
+    });
+    expect(tiles).toEqual([600, 600, 1000, 600]);
+    expect(await viewer.locator('#page').evaluate((e) => getComputedStyle(e).backgroundSize)).toBe(
+      '300px 300px, 300px 300px, 500px 500px, 300px 300px, auto',
+    );
 
     // Files dropped on the presenter's board: a text file, a real picture, a binary one.
     await presenter.evaluate(async () => {
@@ -210,7 +233,7 @@ describe('static presenter page', () => {
       .evaluateAll((nodes) => nodes.map((n) => n.getAttribute('href')?.slice(0, 22)));
     expect(hrefs.every((h) => h?.startsWith('data:image/'))).toBe(true);
     expect(await viewer.locator('collab-whiteboard .item.image-item .pin circle').count()).toBe(9); // each: what catches the pointer, the pin, its highlight
-    expect(await viewer.locator('collab-whiteboard .item.image-item g[filter]').count()).toBe(3);
+    expect(await viewer.locator('collab-whiteboard .item.image-item g.shadow').count()).toBe(3);
 
     // The viewer drags a copy of the text file out: once it has arrived, the drag carries it.
     const dragOut = (name: string) =>
@@ -484,8 +507,8 @@ describe('static presenter page', () => {
     await presenter.mouse.up();
     const threads = viewer.locator('collab-whiteboard .arrow-item');
     await expect.poll(() => threads.count(), { timeout: 30000 }).toBe(2);
-    expect(await threads.nth(0).locator('polygon').count()).toBe(1);
-    expect(await threads.nth(1).locator('polygon').count()).toBe(2);
+    expect(await threads.nth(0).locator('g:not(.shadow) > polygon').count()).toBe(1);
+    expect(await threads.nth(1).locator('g:not(.shadow) > polygon').count()).toBe(2);
   });
 
   it('saves the board as a picture, a drawing and a board file that another session opens', async () => {

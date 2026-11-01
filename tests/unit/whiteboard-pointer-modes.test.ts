@@ -203,11 +203,30 @@ describe('the magnifier', () => {
       expect(copy.id).toBe('');
       expect(copy.style.getPropertyValue('background-color')).toBe('rgb(1, 2, 3)');
       expect(lens.querySelector('use')?.getAttribute('href')).toBe('#wb-layer');
+      // Clipped round by a clip-path on an inner layer (border-radius alone left the copy square).
+      const glass = lens.querySelector<HTMLElement>(':scope > .glass')!;
+      expect(glass.querySelector(':scope > .view')).not.toBeNull();
+      expect(glass.querySelector(':scope > .aim')).not.toBeNull();
+      expect(root.querySelector('style')?.textContent).toMatch(
+        /\.lens \.glass \{[^}]*clip-path: circle\(50%\)/,
+      );
       expect(root.querySelector('#wb-layer .pin-item')).not.toBeNull();
       // Up and to the right of the pointer, enlarged 2.5 times about it.
       expect(lens.style.transform).toBe('translate(420px, 60px)');
       const view = lens.querySelector<HTMLElement>('.view')!;
       expect(view.style.transform).toBe('translate(-893px, -643px) scale(2.5)');
+
+      // A zoom of the content moves the copy instead of making it again (with its videos).
+      content.style.transformOrigin = '0 0';
+      content.style.transform = 'translate(-40px, -20px) scale(2)';
+      move(400, 300);
+      expect(lens.querySelector('.view > div')).toBe(copy.parentElement);
+      expect(copy.parentElement!.style.transform).toBe('translate(-40px, -20px) scale(2)');
+      // Another background does make it again.
+      picture.style.background = 'rgb(4, 5, 6)';
+      move(400, 300);
+      expect(lens.querySelector('.view > div')).not.toBe(copy.parentElement);
+      content.style.transform = '';
 
       // Near the top right corner it goes down and to the left.
       move(750, 20);
@@ -223,7 +242,7 @@ describe('the magnifier', () => {
       stage.dispatchEvent(wheel);
       expect(wheel.defaultPrevented).toBe(true);
       expect(zoomed).toBe(0);
-      expect(view.style.transform).toContain('scale(3)');
+      expect(lens.querySelector<HTMLElement>('.view')!.style.transform).toContain('scale(3)');
 
       // It goes when the pointer leaves, and with another mode.
       stage.dispatchEvent(new MouseEvent('pointerleave'));

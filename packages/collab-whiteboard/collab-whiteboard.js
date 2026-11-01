@@ -18,7 +18,10 @@
  * nothing to them). The pointer tool has modes: the cursor, a laser that leaves a short trail and
  * emotes picked from a wheel that float away (`laser` and `emote` messages, never stored), and a
  * magnifier (a lens beside the pointer with a live copy of the adapter's `content()` and the
- * drawings, seen only here). Bare pins
+ * drawings, seen only here, clipped round by a clip-path; a zoom or pan only moves its copy of the
+ * content, which is made again only when the content changes). Shadows are offset see-through
+ * copies of the shapes, not blurred by a filter (which made zooming slow). The eraser draws the same dashed trail
+ * along its way as the cursor's sweep. Bare pins
  * and the pins of notes and pictures are drawn at half their size and catch the pointer as before.
  * New notes and pins are half the size nymph makes them, text sizes three
  * quarters, and the bar over a selected element is kept inside the board (and hidden while the
@@ -874,6 +877,21 @@ const pastel = (hex) => {
 const SHAPE_INSET = { square: 1, rounded: 1, oval: 0.74, diamond: 0.54, hexagon: 0.86 };
 
 /** The element of a note's outline (also used by the buttons that choose a shape). */
+/**
+ * The shadows of prints, pins and threads: a copy of the shape in see-through black, a little
+ * below and to the right, under it. Its edge is not blurred: a blur (an SVG filter) was drawn again
+ * at every step of a zoom, at the zoomed size, which made zooming slow on large screens.
+ */
+const SHADOW_FILL = 'rgba(0,0,0,0.2)';
+const SHADOW_OFFSET = 'translate(1.5 3)';
+
+/** A shadow of `nodes` (made in {@link SHADOW_FILL}): below what it is the shadow of. */
+function shadowOf(...nodes) {
+  const g = svgEl('g', { class: 'shadow', transform: SHADOW_OFFSET, 'pointer-events': 'none' });
+  g.append(...nodes);
+  return g;
+}
+
 function shapeElement(shape, x, y, w, h, attrs) {
   if (shape === 'oval') {
     return svgEl('ellipse', { cx: x + w / 2, cy: y + h / 2, rx: w / 2, ry: h / 2, ...attrs });
@@ -900,7 +918,7 @@ function pinMetrics(item, h) {
  * Its region is the picture's box (x, y, w, h) grown by the border.
  */
 function cutoutFilter(id, x, y, w, h, pad) {
-  const m = pad + 3;
+  const m = pad + 4; // the border, its edge and the shadow
   const f = svgEl('filter', { id, filterUnits: 'userSpaceOnUse', x: x - m, y: y - m, width: w + 2 * m, height: h + 2 * m, 'color-interpolation-filters': 'sRGB' });
   // Grows what shows, then rounds the steps that leaves off with a slight blur cut back to a sharp edge.
   const grow = (radius, result) => {
@@ -915,9 +933,13 @@ function cutoutFilter(id, x, y, w, h, pad) {
     svgEl('feComposite', { in2: 'outer', operator: 'in', result: 'edge' }),
     svgEl('feFlood', { 'flood-color': '#ffffff' }),
     svgEl('feComposite', { in2: 'grown', operator: 'in', result: 'border' }),
+    // Its shadow: the bordered shape, moved down and to the right, in see-through black.
+    svgEl('feOffset', { in: 'grown', dx: 1.5, dy: 3, result: 'moved' }),
+    svgEl('feFlood', { 'flood-color': '#000000', 'flood-opacity': 0.2 }),
+    svgEl('feComposite', { in2: 'moved', operator: 'in', result: 'shade' }),
   );
   const merge = svgEl('feMerge');
-  merge.append(svgEl('feMergeNode', { in: 'edge' }), svgEl('feMergeNode', { in: 'border' }), svgEl('feMergeNode', { in: 'SourceGraphic' }));
+  merge.append(svgEl('feMergeNode', { in: 'shade' }), svgEl('feMergeNode', { in: 'edge' }), svgEl('feMergeNode', { in: 'border' }), svgEl('feMergeNode', { in: 'SourceGraphic' }));
   f.append(merge);
   return f;
 }
@@ -1309,6 +1331,7 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .lens { position: absolute; left: 0; top: 0; box-sizing: border-box; overflow: hidden; border-radius: 50%; pointer-events: none; background: #ffffff;
   border: 3px solid var(--wb-fg); box-shadow: 0 4px 18px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.6); }
 .lens[hidden] { display: none; }
+.lens .glass { position: absolute; inset: 0; overflow: hidden; border-radius: 50%; clip-path: circle(50%); }
 .lens .view { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
 .lens .view > svg { position: absolute; left: 0; top: 0; width: 100%; height: 100%; overflow: visible; }
 .lens .aim { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; }
@@ -1544,6 +1567,7 @@ export class Whiteboard {
     this.emoteWheel = null; // the emote wheel while it is open
     this.lensPower = 2.5;
     this.lensSig = ''; // what the copy of the content in the lens was made from
+    this.lensCopy = null; // that copy
     // The pointer is in hand without its key or button (at the start, after a note was put down,
     // Esc...): the next press of its key only confirms it instead of going to the next mode.
     this.pointerUnchosen = true;
@@ -1560,6 +1584,7 @@ export class Whiteboard {
     this.selected = null;
     this.group = new Set(); // the ids of a selection of two or more items (then `selected` is null)
     this.sweeping = null; // the drag over the board that selects what it passes over
+    this.eraseTrail = null; // the eraser's way while it is held, drawn as the sweep is
     this.groupDrag = null; // the selection being moved
     this.clipboard = null; // what was copied here last: {key, blobs} (the items go on the system clipboard)
     this.spaceHeld = false; // Space held: a drag on the board pans it (when zoomed in)
@@ -2084,7 +2109,6 @@ export class Whiteboard {
     for (const name of new Set(items.filter((i) => i.kind === 'sticker').map((i) => i.name))) {
       defs.append(this.symbol(name));
     }
-    defs.append(this.shadowFilter());
     const style = svgEl('style');
     style.textContent = `.item text { white-space: pre; font-family: ${NOTE_FONT}; paint-order: stroke; stroke: #ffffff; stroke-width: 0.25em; stroke-linejoin: round; }`;
     svg.append(defs, style);
@@ -2537,7 +2561,6 @@ export class Whiteboard {
     this.pagesBox = htmlEl('div', { class: 'pages', role: 'group', 'aria-label': this.strings.canvases, hidden: !this.showPages });
     this.root.append(this.board, this.dragLayer, this.fxLayer, this.cursorLayer, this.lens, this.toolbarBox, this.popover, this.selbar, this.hintBox, this.tipBox, this.queueBox, this.pagesBox);
     this.container.append(this.host);
-    this.defs.append(this.shadowFilter());
     for (const [name, svg] of this.stickers) {
       this.defs.append(this.symbol(name, svg));
     }
@@ -2573,13 +2596,6 @@ export class Whiteboard {
         return cell;
       }),
     );
-  }
-
-  /** @private The soft shadow of the pinned pictures. */
-  shadowFilter() {
-    const f = svgEl('filter', { id: 'wb-shadow', x: '-20%', y: '-20%', width: '140%', height: '150%' });
-    f.append(svgEl('feDropShadow', { dx: 2, dy: 4, stdDeviation: 3.5, 'flood-color': '#000000', 'flood-opacity': 0.38 }));
-    return f;
   }
 
   /** @private A sticker as a <symbol id="sticker-name">. */
@@ -3028,7 +3044,7 @@ export class Whiteboard {
   }
 
   /**
-   * @private The thread of an arrow, a physical object: hangs between two pins, with a soft shadow,
+   * @private The thread of an arrow, a physical object: hangs between two pins, with a shadow,
    * and a head at either end when asked. `resolve` finds the items it is tied to (a preview moves them).
    */
   threadNode(item, g, resolve) {
@@ -3056,9 +3072,10 @@ export class Whiteboard {
     if (item.heads === 'start' || item.heads === 'both') {
       head(a, c);
     }
-    const thread = svgEl('g', { filter: 'url(#wb-shadow)' });
+    const thread = svgEl('g');
     thread.append(svgEl('path', { class: 'paper', d, fill: 'none', stroke: item.color, 'stroke-width': 2.6, 'stroke-linecap': 'round' }), ...heads);
-    g.append(svgEl('path', { class: 'hit', d, fill: 'none', stroke: 'transparent', 'stroke-width': 14, 'stroke-linecap': 'round' }), thread);
+    const shade = shadowOf(svgEl('path', { d, fill: 'none', stroke: SHADOW_FILL, 'stroke-width': 2.6, 'stroke-linecap': 'round' }), ...heads.map((h) => svgEl('polygon', { points: h.getAttribute('points'), fill: SHADOW_FILL })));
+    g.append(svgEl('path', { class: 'hit', d, fill: 'none', stroke: 'transparent', 'stroke-width': 14, 'stroke-linecap': 'round' }), shade, thread);
     if (item.lock) {
       g.append(lockBadge((a.x + 2 * c.x + b.x) / 4, (a.y + 2 * c.y + b.y) / 4 - 4, item.lock));
     }
@@ -3088,9 +3105,16 @@ export class Whiteboard {
       svgEl('circle', { cx: item.x - head * 0.3, cy: py - head * 0.32, r: head * 0.3, fill: 'rgba(255,255,255,0.6)' }),
     );
     print.append(pin);
-    const shadow = svgEl('g', { filter: 'url(#wb-shadow)' });
-    shadow.append(print);
-    return shadow;
+    // The shadow of the paper, turned with it but cast down and to the right whatever the turn (a
+    // cutout casts its own, in its filter).
+    const out = svgEl('g');
+    if (paper !== null) {
+      const turned = svgEl('g', { ...turn });
+      turned.append(shapeElement(shape, left - pad, top - pad, item.size + 2 * pad, h + 2 * pad, { fill: SHADOW_FILL }));
+      out.append(shadowOf(turned));
+    }
+    out.append(print);
+    return out;
   }
 
   /** @private One item's SVG. Text goes in as textContent only. */
@@ -3136,7 +3160,8 @@ export class Whiteboard {
       }
     } else if (item.kind === 'pin') {
       const at = pinPoint(item, resolve);
-      const shadow = svgEl('g', { filter: 'url(#wb-shadow)' });
+      // Its shadow is the ellipse under it.
+      const shadow = svgEl('g');
       shadow.append(
         svgEl('ellipse', { cx: at.x + 2, cy: at.y + 3, rx: PIN_RADIUS * 0.95, ry: PIN_RADIUS * 0.6, fill: 'rgba(0,0,0,0.3)' }),
         pinHead(item.shape ?? 'round', at.x, at.y, PIN_RADIUS, { class: 'paper', fill: item.color, stroke: 'rgba(0,0,0,0.4)', 'stroke-width': 0.6 }),
@@ -3705,6 +3730,7 @@ export class Whiteboard {
         this.lens.hidden = true;
         this.lens.replaceChildren();
         this.lensSig = '';
+        this.lensCopy = null;
       }
       return;
     }
@@ -3726,26 +3752,46 @@ export class Whiteboard {
     this.lens.hidden = false;
   }
 
-  /** @private (Re)makes the copy of the content in the lens when the content changed (background, stream, zoom). */
+  /**
+   * @private (Re)makes the copy of the content in the lens when the content changed (background,
+   * stream). A zoom or a pan only moves the copy: its transform follows the content's, so the copy
+   * (and the video in it) is not made again at every step.
+   */
   syncLensContent(w, h) {
     const content = this.adapter.content?.() ?? null;
     const parts = content ? [content, ...content.querySelectorAll('*')] : [];
-    const sig = `${w}x${h}|${parts.map((el) => `${el.hidden}:${el.getAttribute('style') ?? ''}:${el.srcObject?.id ?? el.currentSrc ?? ''}`).join('|')}`;
-    if (sig === this.lensSig) {
-      return;
+    // The content's own transform (the zoom) is left out: it is set on the copy below.
+    const styleOf = (el) => (el === content ? Array.from({ length: el.style.length }, (_, i) => el.style.item(i)).filter((p) => !p.startsWith('transform')).map((p) => `${p}:${el.style.getPropertyValue(p)}`).join(';') : (el.getAttribute('style') ?? ''));
+    const sig = `${w}x${h}|${parts.map((el) => `${el.hidden}:${styleOf(el)}:${el.srcObject?.id ?? el.currentSrc ?? ''}`).join('|')}`;
+    if (sig !== this.lensSig) {
+      this.lensSig = sig;
+      this.makeLensContent(content, w, h);
     }
-    this.lensSig = sig;
+    if (content && this.lensCopy) {
+      const cs = getComputedStyle(content);
+      this.lensCopy.style.transform = cs.transform;
+      this.lensCopy.style.transformOrigin = cs.transformOrigin;
+    }
+  }
+
+  /** @private Makes the lens's copy of `content` (null: none) and of the drawings, `w` by `h`. */
+  makeLensContent(content, w, h) {
     const view = htmlEl('div', { class: 'view' });
     view.style.width = `${w}px`;
     view.style.height = `${h}px`;
-    if (content) {
-      view.append(copyLive(content));
+    this.lensCopy = content ? copyLive(content) : null;
+    if (this.lensCopy) {
+      view.append(this.lensCopy);
     }
     const svg = svgEl('svg');
     svg.append(svgEl('use', { href: '#wb-layer' }));
     const aim = htmlEl('div', { class: 'aim' }, '<svg viewBox="0 0 14 14" width="14" height="14"><path d="M7 0v5M7 9v5M0 7h5M9 7h5" stroke="#1c2024" stroke-width="1.4"/><path d="M7 1v3.5M7 9.5V13M1 7h3.5M9.5 7H13" stroke="#fff" stroke-width="0.6"/></svg>');
     view.append(svg);
-    this.lens.replaceChildren(view, aim);
+    // The round clip is on a layer of its own: Chromium leaves the composited copy (scaled, with
+    // videos) square under the lens's border-radius alone, so it needs the clip-path.
+    const glass = htmlEl('div', { class: 'glass' });
+    glass.append(view, aim);
+    this.lens.replaceChildren(glass);
   }
 
   // ── Laser and emotes ────────────────────────────────────────────────────
@@ -4343,6 +4389,7 @@ export class Whiteboard {
       this.drawing.node.setAttribute('d', inkPath(this.drawing.points));
     } else if (this.tool === 'eraser') {
       this.erasing = new Set();
+      this.eraseTrail = { points: [round1(p.x), round1(p.y)], node: null };
       this.eraseAt(ev);
     } else if (this.tool === 'text') {
       this.pendingText = p;
@@ -4387,6 +4434,7 @@ export class Whiteboard {
       }
     } else if (this.erasing) {
       this.eraseAt(ev);
+      this.extendEraseTrail(ev);
     } else if (this.threading) {
       this.dragThread(ev);
     } else if (this.dragging) {
@@ -5013,6 +5061,8 @@ export class Whiteboard {
     } else if (this.erasing) {
       const ids = [...this.erasing];
       this.erasing = null;
+      this.eraseTrail?.node?.remove();
+      this.eraseTrail = null;
       for (const id of ids) {
         this.nodes.get(id)?.node.classList.remove('erasing');
         if (!cancelled) {
@@ -5473,6 +5523,26 @@ export class Whiteboard {
       this.erasing.add(hit.id);
       this.nodes.get(hit.id)?.node.classList.add('erasing');
     }
+  }
+
+  /** @private The eraser's way is drawn as the cursor's sweep is, from its first move until it is let go. */
+  extendEraseTrail(ev) {
+    const t = this.eraseTrail;
+    if (!t) {
+      return;
+    }
+    const p = this.eventPoint(ev);
+    const x = round1(p.x);
+    const y = round1(p.y);
+    if (x === t.points[t.points.length - 2] && y === t.points[t.points.length - 1]) {
+      return;
+    }
+    t.points.push(x, y);
+    if (!t.node) {
+      t.node = svgEl('path', { class: 'sweep', 'vector-effect': 'non-scaling-stroke' });
+      this.liveGroup.append(t.node);
+    }
+    t.node.setAttribute('d', inkPath(t.points));
   }
 
   /** @private A text box over the note being written (a new one at `at`). */

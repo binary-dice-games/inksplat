@@ -32,6 +32,7 @@ import { setToolbarFolded } from './fold';
 import { filePreview } from './previews';
 import { qrModules, qrPng, qrSvg } from './qr';
 import { showSheet } from './sheet';
+import { layerWhileMoving } from './zoom-layer';
 import { boardArchive, download, fileStamp, openBoardFile, wireSave } from './save';
 import type { SaveHost } from './save';
 import { BackupWriter, backupInfo, openBackupStore } from './backup';
@@ -55,6 +56,8 @@ let host: ShareHost | null = null;
 let share: ShareButton | null = null;
 let board: Whiteboard | null = null;
 let adapter: FrameAdapter | null = null;
+/** Stops keeping the zoomed content on a layer of its own while it moves. */
+let unlayer: (() => void) | null = null;
 let settings: Settings | null = null;
 let prefs: PresenterPrefs = loadPrefs();
 /** The avatar in the settings dialog, until it is saved. */
@@ -266,6 +269,7 @@ function enterApp(): void {
   const h = host;
   offered = new Set();
   adapter = frameAdapter(stageEl, () => boardAspect(h.stage()), $('zoom'));
+  unlayer = layerWhileMoving($('zoom'), adapter);
   board = createWhiteboard(stageEl, {
     session: h.session,
     adapter,
@@ -296,6 +300,8 @@ function endSession(message: string): void {
   share?.stop();
   board?.destroy();
   board = null;
+  unlayer?.();
+  unlayer = null;
   adapter = null;
   video().srcObject = null;
   $('overText').textContent = message;

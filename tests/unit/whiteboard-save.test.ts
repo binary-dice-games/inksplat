@@ -97,7 +97,7 @@ describe('saving a board', () => {
       expect(doc.querySelector('parsererror')?.textContent).toBeUndefined();
       const root = doc.documentElement;
       expect(root.getAttribute('viewBox')).toBe('0 0 1000 562.5');
-      expect(root.querySelector('filter#wb-shadow')).not.toBeNull();
+      expect(root.querySelector('filter#wb-shadow')).toBeNull(); // shadows are shapes, not filters
       expect(root.querySelector('foreignObject div')?.getAttribute('style')).toContain(
         'background:#f6f7f8',
       );
