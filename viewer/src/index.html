@@ -489,51 +489,6 @@
         border-color: rgba(255, 255, 255, 0.35);
         font-size: 12px;
       }
-      #panel {
-        position: absolute;
-        top: 10px;
-        right: 10px;
-        width: 260px;
-        max-height: calc(100% - 60px);
-        overflow: auto;
-        padding: 12px;
-        border: 1px solid var(--border);
-        border-radius: 12px;
-        background: var(--panel);
-        color: var(--fg);
-        z-index: 20;
-        display: grid;
-        gap: 8px;
-      }
-      #panel h2 {
-        margin: 0;
-        font-size: 14px;
-      }
-      #panel label {
-        display: flex;
-        gap: 8px;
-        align-items: center;
-        margin: 0;
-        cursor: pointer;
-      }
-      #panel ul {
-        margin: 0;
-        padding: 0;
-        list-style: none;
-        display: grid;
-        gap: 4px;
-      }
-      #panel li {
-        display: flex;
-        gap: 6px;
-        align-items: center;
-      }
-      #panel li .name {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-      }
       .swatch {
         width: 10px;
         height: 10px;
@@ -613,11 +568,6 @@
           left: 8px;
           right: 8px;
           justify-content: space-between;
-        }
-        #panel {
-          left: 8px;
-          right: 8px;
-          width: auto;
         }
       }
       #toast {

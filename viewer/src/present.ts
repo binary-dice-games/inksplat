@@ -136,25 +136,45 @@ function button(text: string, label: string, onClick: () => void, pressed?: bool
   return b;
 }
 
+/** A list row's text: a name and, under it, an optional detail; both cut with an ellipsis. */
+function rowText(name: string, meta?: string): HTMLElement {
+  const text = document.createElement('span');
+  text.className = 'text';
+  const n = document.createElement('span');
+  n.className = 'name';
+  n.textContent = name;
+  text.append(n);
+  if (meta) {
+    const m = document.createElement('span');
+    m.className = 'meta';
+    m.textContent = meta;
+    text.append(m);
+  }
+  text.title = meta ? `${name}: ${meta}` : name;
+  return text;
+}
+
 /** The Screen section: a row per stream on offer, and None. */
 function renderStreams(ui: UiState): void {
   const row = (s: StreamInfo | null): HTMLElement => {
     const li = document.createElement('li');
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
-    const name = document.createElement('span');
-    name.className = 'name';
     const id = s?.id ?? null;
+    let text: HTMLElement;
     if (s) {
       swatch.style.background = /^#[0-9a-fA-F]{6}$/.test(s.color) ? s.color : '#8b8d98';
       const size = s.w > 0 ? ` ${s.w}\u00d7${s.h}` : '';
-      name.textContent = `${s.name || 'Viewer'}${s.own ? ' (you)' : ''}: ${SURFACES[s.surface]}${size}`;
+      text = rowText(
+        `${s.name || 'Viewer'}${s.own ? ' (you)' : ''}`,
+        `${SURFACES[s.surface]}${size}`,
+      );
     } else {
       swatch.style.background = '#000';
-      name.textContent = 'None (black)';
+      text = rowText('None', 'black screen');
     }
     li.classList.toggle('active', ui.active === id);
-    li.append(swatch, name);
+    li.append(swatch, text);
     const who = s ? (s.own ? 'your screen' : `the screen of ${s.name || 'a viewer'}`) : 'nothing';
     if (s && !s.own) {
       const on = ui.preview === id;
@@ -221,18 +241,17 @@ function render(): void {
   $('viewers').replaceChildren(
     ...ui.viewers.map((p) => {
       const li = document.createElement('li');
-      const swatch = document.createElement('span');
-      swatch.className = 'swatch';
-      swatch.style.background = /^#[0-9a-fA-F]{6}$/.test(p.color) ? p.color : '#8b8d98';
-      const name = document.createElement('span');
-      name.className = 'name';
-      name.textContent = p.name || 'Viewer';
+      const avatar = document.createElement('span');
+      avatar.className = 'avatar';
+      avatar.style.background = /^#[0-9a-fA-F]{6}$/.test(p.color) ? p.color : '#8b8d98';
+      avatar.textContent = (p.name || 'Viewer').trim().charAt(0).toUpperCase() || '?';
+      avatar.setAttribute('aria-hidden', 'true');
       const kick = document.createElement('button');
       kick.type = 'button';
       kick.textContent = 'Remove';
       kick.setAttribute('aria-label', `Remove ${p.name || 'viewer'}`);
       kick.addEventListener('click', () => void host?.command({ cmd: 'remove', id: p.id }));
-      li.append(swatch, name, kick);
+      li.append(avatar, rowText(p.name || 'Viewer'), kick);
       return li;
     }),
   );
@@ -554,6 +573,7 @@ function main(): void {
     }
   });
   $('panelToggle').addEventListener('click', () => setPanelCollapsed(!prefs.panelCollapsed));
+  $('panelClose').addEventListener('click', () => setPanelCollapsed(true));
   $('toolsToggle').addEventListener('click', () => setToolsCollapsed(!prefs.toolsCollapsed));
   const tabs = [...document.querySelectorAll<HTMLButtonElement>('#settings [role=tab]')];
   const selectTab = (tab: HTMLButtonElement, focus = false): void => {
