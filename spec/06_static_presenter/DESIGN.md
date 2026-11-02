@@ -56,10 +56,9 @@ no delay. Consequences:
 `navigator.mediaDevices.getDisplayMedia` with `video: true`, `audio: false`,
 `selfBrowserSurface: 'exclude'` (the presenter page is not offered, it would film
 itself), `surfaceSwitching: 'include'` (Chrome's "share this tab instead") and
-`monitorTypeSurfaces: 'include'`. The video constraint carries `cursor`
-(`always`, `motion` or `never`) from the settings, so the mouse pointer is
-optional in the shared video; it is applied when the picker opens, hence at the
-next **Share again**, and a browser or source may ignore it.
+`monitorTypeSurfaces: 'include'`. There is no
+option to hide the mouse pointer: Chrome ignores the `cursor` constraint for
+most sources, so it was removed.
 
 Unlike `spec/03` there is **no canvas relay**: the track goes straight to the
 senders. The relay needed timers, and a background tab's timers are throttled;

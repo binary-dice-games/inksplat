@@ -418,6 +418,7 @@
         margin: 0;
       }
       .avatar-row {
+        flex-wrap: wrap;
         display: flex;
         gap: 8px;
         align-items: center;
@@ -694,19 +695,11 @@
             <label for="avatar">Your picture</label>
             <div class="avatar-row">
               <img id="avatarPreview" alt="" hidden />
-              <input id="avatar" type="file" accept="image/*" />
+              <button id="avatarPick" type="button">Choose picture</button>
+              <input id="avatar" type="file" accept="image/*" hidden />
               <button id="avatarClear" type="button">Remove</button>
             </div>
             <p class="hint">Shown on your cursor instead of your name.</p>
-          </div>
-          <div class="field">
-            <label for="cursor">Mouse pointer in the video</label>
-            <select id="cursor">
-              <option value="always">Always shown</option>
-              <option value="motion">Only while it moves</option>
-              <option value="never">Hidden</option>
-            </select>
-            <p class="hint">Applies the next time you share a screen.</p>
           </div>
           <label class="check">
             <input id="viewersMayDraw" type="checkbox" /> Viewers may draw when a session starts

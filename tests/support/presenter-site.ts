@@ -193,11 +193,10 @@ export async function shareScreen(page: Page): Promise<void> {
   await expect.poll(() => page.locator('#share').textContent()).toBe('Stop sharing');
 }
 
-/** Saves the name (and, optionally, the pointer mode) through the settings dialog. */
-export async function configure(page: Page, cursor?: string): Promise<void> {
+/** Saves the name through the settings dialog. */
+export async function configure(page: Page): Promise<void> {
   await page.locator('#openSettings').click();
   await page.locator('#name').fill('Pat');
-  if (cursor) await page.locator('#cursor').selectOption(cursor);
   await page.locator('#settingsForm button[type=submit]').click();
 }
 

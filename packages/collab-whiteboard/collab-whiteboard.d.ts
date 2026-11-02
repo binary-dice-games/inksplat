@@ -41,6 +41,8 @@ export interface TextItem extends ItemBase {
   size: number;
   text: string;
   color: string;
+  /** `serif`, `mono` or `hand`; absent: the sans serif font. */
+  font?: 'serif' | 'mono' | 'hand';
 }
 
 export interface StickerItem extends ItemBase {

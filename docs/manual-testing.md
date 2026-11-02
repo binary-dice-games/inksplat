@@ -38,7 +38,6 @@ presenter on Chrome.
 | 24 | Presenter page: share a still window (nothing moving), then join a viewer after a minute | The late viewer gets a first frame within a few seconds |
 | 25 | Presenter page: put the page in the background (shared window in front) for 5 minutes while the shared window animates | Viewers keep getting frames at about the set rate; their drawings still reach the page |
 | 26 | Presenter page: click the browser's "Stop sharing", then **Share screen** again | Viewers see black, then (the new stream goes on screen when nothing else is) the new source on the same link |
-| 27 | Presenter page: Settings, mouse pointer **Hidden**, then share a window and move the mouse over it | Viewers do not see the pointer; "Always shown" brings it back at the next **Share screen** |
 | 28 | Fold **Tools** and **Controls** on the presenter page, and **Tools** on the viewer; reload | The toolbar and panel stay out of the way and come back with their buttons; the choice is remembered |
 | 29 | On a viewer and on the presenter page press 2, 2, 2, 2, then 3, 3 and 4, 4, 6 | The line goes thin/normal/thick, text small/medium/large, the sticker and colour change; the toolbar icons show the choice |
 | 30 | Draw a line and a sticker, drag them, right click them, then click each and press Delete; try a locked one | Right click does nothing to them; Delete removes the selected one; a locked one stays. Shift+drag scales and Ctrl+drag turns a sticker; a note, picture or link turns about its pin |

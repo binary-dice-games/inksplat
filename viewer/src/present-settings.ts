@@ -1,16 +1,14 @@
 // MIT License © 2026 Binary Dice Games
 /**
  * @file Settings of the presenter page (spec/06_static_presenter): the
- * session settings plus the mouse pointer choice, the tool hints and the folding
+ * session settings plus the tool hints and the folding
  * of the tools and the panel, kept in `localStorage`. Everything read back is validated.
  */
 import { cleanSettings } from './settings';
 import type { Settings } from './settings';
-import type { CursorMode } from './display-capture';
 
 export interface PresenterPrefs {
   settings: Settings;
-  cursor: CursorMode;
   /** The whiteboard toolbar is folded away. */
   toolsCollapsed: boolean;
   /** The controls panel is folded away. */
@@ -26,7 +24,6 @@ export function cleanPrefs(input: unknown): PresenterPrefs {
   const o = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
   return {
     settings: cleanSettings(o.settings),
-    cursor: o.cursor === 'motion' || o.cursor === 'never' ? o.cursor : 'always',
     toolsCollapsed: o.toolsCollapsed === true,
     panelCollapsed: o.panelCollapsed === true,
     toolHints: o.toolHints !== false,

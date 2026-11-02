@@ -427,7 +427,6 @@ function fillSettings(p: PresenterPrefs): void {
   input('name').value = s.name;
   input('color').value = s.color;
   input('viewersMayDraw').checked = s.viewersMayDraw;
-  $<HTMLSelectElement>('cursor').value = p.cursor;
   input('toolHints').checked = p.toolHints;
   input('fps').value = String(s.video.fps);
   input('maxWidth').value = String(s.video.maxWidth);
@@ -444,7 +443,6 @@ function fillSettings(p: PresenterPrefs): void {
 function readSettings(): PresenterPrefs {
   return cleanPrefs({
     ...prefs,
-    cursor: $<HTMLSelectElement>('cursor').value,
     toolHints: input('toolHints').checked,
     settings: {
       name: input('name').value,
@@ -485,10 +483,8 @@ function showUplink(): void {
 }
 
 function summary(): void {
-  const { settings: s, cursor } = prefs;
-  const pointer = { always: 'shown', motion: 'shown while it moves', never: 'hidden' }[cursor];
-  $('summary').textContent =
-    `${s.name}, ${s.video.fps} frames per second, mouse pointer ${pointer}.`;
+  const s = prefs.settings;
+  $('summary').textContent = `${s.name}, ${s.video.fps} frames per second.`;
 }
 
 /** Stores the dialog's prefs; the video limits reach a running share at once. */
@@ -536,7 +532,6 @@ function main(): void {
   share = wireShareButton({
     button: $<HTMLButtonElement>('share'),
     notice: $<HTMLDialogElement>('shareNotice'),
-    cursor: () => prefs.cursor,
     toast,
     onStart: (c) => {
       const { width, height } = c.size();
@@ -628,6 +623,7 @@ function main(): void {
       );
     }
   });
+  $('avatarPick').addEventListener('click', () => $<HTMLInputElement>('avatar').click());
   $('avatarClear').addEventListener('click', () => showAvatar(''));
   $('settingsForm').addEventListener('input', showUplink);
   $('settingsForm').addEventListener('submit', (e) => {

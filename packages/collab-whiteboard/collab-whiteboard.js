@@ -27,7 +27,7 @@
  * quarters, and the bar over a selected element is kept inside the board (and hidden while the
  * element is dragged or a thread pulled). A note can be dragged
  * out to its size with the note tool, and a thread pressed on or let go over an element gets a new
- * pin there. A sticker catches the pointer over its whole square (WebKit missed its <use>).
+ * pin there. A selected line or text has a bar for its width or size, font (`font` on a text) and colour. A sticker catches the pointer over its whole square (WebKit missed its <use>).
  * `saveBoard` gives the files as bytes and `loadBoard` takes them so (the page saves boards as
  * zips, with the files apart from the JSON). A drag of the pointer from an empty place selects
  * several items, which are moved, coloured, removed, copied, cut and pasted together; zoomed in, a
@@ -213,7 +213,8 @@ export function cleanItem(item) {
     if (typeof item.text !== 'string' || item.text.length === 0 || item.text.length > LIMITS.text || !COLOR.test(item.color ?? '')) {
       return null;
     }
-    return { ...base, x: item.x, y: item.y, size: item.size, text: item.text, color: item.color };
+    const font = TEXT_FONTS.includes(item.font) && item.font !== 'sans' ? { font: item.font } : {};
+    return { ...base, x: item.x, y: item.y, size: item.size, text: item.text, color: item.color, ...font };
   }
   if (!STICKER.test(item.name ?? '')) {
     return null;
@@ -844,6 +845,14 @@ const WIDTHS = [2, 4, 8];
 const WIDTH_NAMES = ['thin', 'normal', 'thick'];
 const SIZES = [14, 21, 33];
 const SIZE_NAMES = ['small', 'medium', 'large'];
+/** The fonts of a text (`sans`, the default, is not stored) and the CSS stacks they stand for. */
+const TEXT_FONTS = ['sans', 'serif', 'mono', 'hand'];
+const FONT_STACKS = {
+  sans: 'system-ui, -apple-system, "Segoe UI", sans-serif',
+  serif: 'Georgia, "Times New Roman", serif',
+  mono: 'ui-monospace, Consolas, "Courier New", monospace',
+  hand: '"Comic Sans MS", "Segoe Print", "Bradley Hand", cursive',
+};
 /** Where each tool's cursor points, in its 24-unit icon. */
 const HOTSPOT = { pointer: [5, 3], pen: [4, 20], text: [12, 12], sticker: [12, 12], eraser: [5, 19], note: [12, 12], pin: [12, 12], arrow: [12, 12], laser: [12, 12], emote: [12, 12], magnify: [10, 10] };
 /** The icons of the pointer's laser and emote modes (on the toolbar and on remote cursors). */
@@ -1244,6 +1253,12 @@ const STRINGS = {
   shapeNames: { square: 'Square', rounded: 'Rounded', oval: 'Oval', diamond: 'Diamond', hexagon: 'Hexagon' },
   headNames: { none: 'No heads', start: 'Head at the source', end: 'Head at the destination', both: 'Heads at both ends' },
   shapeLabel: 'Shape',
+  widthLabel: 'Line width',
+  widthNames: { thin: 'Thin', normal: 'Normal', thick: 'Thick' },
+  sizeLabel: 'Text size',
+  sizeNames: { small: 'Small', medium: 'Medium', large: 'Large' },
+  fontLabel: 'Font',
+  fontNames: { sans: 'Sans serif', serif: 'Serif', mono: 'Monospace', hand: 'Handwriting' },
   pinShapeNames: { round: 'Round', square: 'Square', diamond: 'Diamond', triangle: 'Triangle', star: 'Star' },
   lockNames: {
     open: 'Unlocked: anybody can change it (click to lock it for the others)',
@@ -3129,7 +3144,7 @@ export class Whiteboard {
         svgEl('path', { d, fill: 'none', stroke: item.color, 'stroke-width': item.width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
       );
     } else if (item.kind === 'text') {
-      const text = svgEl('text', { x: item.x, y: item.y, 'font-size': item.size, fill: item.color, 'dominant-baseline': 'hanging' });
+      const text = svgEl('text', { x: item.x, y: item.y, 'font-size': item.size, fill: item.color, 'dominant-baseline': 'hanging', 'font-family': FONT_STACKS[item.font ?? 'sans'] });
       if (item.color.toLowerCase() === '#ffffff') {
         text.style.stroke = '#1c2024';
       }
@@ -4573,7 +4588,8 @@ export class Whiteboard {
   }
 
   /**
-   * @private The bar over the selected element: for a note its shapes, text sizes and paper colours;
+   * @private The bar over the selected element: for a line its widths and colours; for a text its
+   * sizes, fonts and colours; for a note its shapes, text sizes and paper colours;
    * for a thread its heads and colours; for a pin its colours; for anybody the copy of a note's text,
    * and for its owner the lock. Only what the person may change is offered.
    */
@@ -4633,6 +4649,24 @@ export class Whiteboard {
           const icon = this.toolIcon('arrow');
           this.style.heads = saved;
           parts.push(button(s.headNames[heads], `<svg viewBox="0 0 24 24">${icon}</svg>`, item.heads === heads, () => change({ heads })));
+        }
+        rule();
+        swatches(PALETTE, item.color, 'color');
+      } else if (editable && item.kind === 'ink') {
+        for (const [i, width] of WIDTHS.entries()) {
+          const icon = `<path d="M4 12h16" stroke="currentColor" stroke-width="${width}" stroke-linecap="round"/>`;
+          parts.push(button(`${s.widthLabel}: ${s.widthNames[WIDTH_NAMES[i]]}`, `<svg viewBox="0 0 24 24">${icon}</svg>`, item.width === width, () => change({ width })));
+        }
+        rule();
+        swatches(PALETTE, item.color, 'color');
+      } else if (editable && item.kind === 'text') {
+        for (const [i, size] of SIZES.entries()) {
+          const px = [10, 14, 19][i];
+          parts.push(button(`${s.sizeLabel}: ${s.sizeNames[SIZE_NAMES[i]]}`, `<svg viewBox="0 0 24 24"><text x="12" y="${12 + px * 0.35}" font-size="${px}" font-weight="700" text-anchor="middle" fill="currentColor" font-family="system-ui, sans-serif">A</text></svg>`, item.size === size, () => change({ size })));
+        }
+        rule();
+        for (const font of TEXT_FONTS) {
+          parts.push(button(`${s.fontLabel}: ${s.fontNames[font]}`, `<svg viewBox="0 0 24 24"><text x="12" y="17" font-size="15" text-anchor="middle" fill="currentColor" font-family='${FONT_STACKS[font].replace(/"/g, '')}'>Aa</text></svg>`, (item.font ?? 'sans') === font, () => change({ font: font === 'sans' ? undefined : font })));
         }
         rule();
         swatches(PALETTE, item.color, 'color');
