@@ -57,6 +57,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+          cache: npm
+      # smoke-site.mjs imports the site builder, which needs esbuild.
+      - run: npm ci
       # The deploy can take a moment to reach every edge: try for a few minutes.
       - run: |
           for attempt in 1 2 3 4 5 6; do
