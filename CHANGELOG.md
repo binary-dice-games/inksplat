@@ -9,9 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A selected line has a bar over it to change its width and colour; a selected text, its size, font (sans serif, serif, monospace, handwriting) and colour.
 - A tutorial page on the site (`tutorial.html`, linked from the home page, its About box and the join form): how to start, join and share a screen, every tool with screenshots and animations, sharing pictures and files by drag and drop, and the shortcuts that have no button.
 - A faint line under the canvas buttons says for a few seconds how to use the tool just picked (and the pointer's mode, or the selection), like "Drag to draw · Press 2 again for another width". It can be turned off (**Settings** on the presenter page, the join form for viewers), folds away with **Tools** and is not shown on phone-sized screens.
 - Several items can be selected with the pointer (1): a drag that starts on an empty place selects everything it passes over. Dragging any of them moves them all; the bar over them changes their colour; Delete removes them; Ctrl+C, Ctrl+X and Ctrl+V copy, cut and paste them (with the pins and threads on them) where the pointer is. A single selected item can be copied and pasted too.
+
+### Fixed
+
+- Join and settings dialogs: the picture row no longer overflows the dialog, and the picture field says "Choose picture" instead of "No file selected" when one is already saved.
+
+### Removed
+
+- The "Mouse pointer in the video" setting: browsers ignore it, so the pointer was always shown.
 
 ### Changed
 
@@ -73,8 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Presenter page on the viewer site (`present.html`): start a session and choose what to share with the browser's picker (a tab, a window,
   a whole screen, native applications included). The page is presenter and
   console in one: draw over the live preview, copy the viewer link, and manage
-  viewers (remove, lock, pause, clear, end). The mouse pointer can be hidden in the
-  shared video; a Settings dialog sets name, colour, video limits, trackers and
+  viewers (remove, lock, pause, clear, end). A Settings dialog sets name, colour, video limits, trackers and
   STUN/TURN servers; the tools and the controls panel can be folded away.
 - Viewer page: join a link, watch the shared tab and draw on it (pen, text,
   stickers, emoticons), and fold the toolbar away. See who is here and how the

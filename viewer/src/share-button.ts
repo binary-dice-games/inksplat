@@ -7,7 +7,7 @@
  */
 import type { Stage } from '@inksplat/defaults';
 import { canCaptureDisplay, startDisplayCapture, surfaceWarning } from './display-capture';
-import type { CursorMode, DisplayCapture } from './display-capture';
+import type { DisplayCapture } from './display-capture';
 
 /** Where one's own stream stands: not shared, on offer, previewed by the host, on the screen. */
 export type OwnerStatus = 'idle' | 'offered' | 'previewed' | 'live';
@@ -79,8 +79,6 @@ export interface ShareButtonOptions {
    * and a `button[value=cancel]`; its Continue click is the gesture that opens the picker.
    */
   notice: HTMLDialogElement;
-  /** Whether the shared video shows the mouse pointer. */
-  cursor?: () => CursorMode | undefined;
   /** A capture began. */
   onStart(capture: DisplayCapture): void;
   /** The capture ended: the button, the browser's own "Stop sharing", or the window closed. */
@@ -146,7 +144,7 @@ export function wireShareButton(options: ShareButtonOptions): ShareButton {
     }
     picking = true;
     try {
-      const next = await startDisplayCapture(options.cursor?.());
+      const next = await startDisplayCapture();
       current?.stop();
       current = next;
       next.onEnded(() => {

@@ -1002,21 +1002,14 @@ describe('static presenter page', () => {
     await expect.poll(async () => (await stickers()).length).toBe(3);
   });
 
-  it('hides the pointer when asked, and remembers the settings', async () => {
+  it('remembers the settings', async () => {
     const presenter = await presenterPage();
-    await configure(presenter, 'never');
-    await expect.poll(() => presenter.locator('#summary').textContent()).toMatch(/Pat.*hidden/);
-    await presenter.locator('#startSession').click();
-    await presenter.locator('#app').waitFor({ state: 'visible', timeout: 30000 });
-    await shareScreen(presenter);
-    const asked = await presenter.evaluate(
-      () => (window as unknown as { asked: { video: { cursor?: string } } }).asked,
-    );
-    expect(asked.video.cursor).toBe('never');
+    await configure(presenter);
+    await expect.poll(() => presenter.locator('#summary').textContent()).toMatch(/Pat/);
     // Stored: a reload shows them again (the page asks first: it ends the session).
     presenter.once('dialog', (d) => void d.accept());
     await presenter.reload();
-    await expect.poll(() => presenter.locator('#summary').textContent()).toMatch(/Pat.*hidden/);
+    await expect.poll(() => presenter.locator('#summary').textContent()).toMatch(/Pat/);
   });
 
   it('asks before closing, keeps a backup of the board and offers to resume it', async () => {

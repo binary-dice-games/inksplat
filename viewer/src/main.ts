@@ -438,6 +438,7 @@ async function main(): Promise<void> {
       );
     }
   });
+  $('avatarPick').addEventListener('click', () => $<HTMLInputElement>('avatar').click());
   $('avatarClear').addEventListener('click', () => showAvatar(''));
   $('joinForm').addEventListener('submit', (e) => {
     e.preventDefault();

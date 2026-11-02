@@ -12,9 +12,6 @@ import { refreshStill } from './still-refresh';
 /** What kind of surface the user picked (`displaySurface` of the track settings). */
 export type Surface = 'browser' | 'window' | 'monitor' | 'unknown';
 
-/** Whether the shared video shows the mouse pointer (`cursor` of `getDisplayMedia`). */
-export type CursorMode = 'always' | 'motion' | 'never';
-
 export interface DisplayCapture {
   /**
    * The captured surface, to hand to `ShareHost.setSource`; where the browser can, its frame
@@ -71,15 +68,13 @@ export function canCaptureDisplay(): boolean {
  * Opens the picker and captures what the user chooses. Must run from a user
  * gesture (a click).
  *
- * @param cursor whether the video shows the mouse pointer (the browser may ignore it;
- *        the default is the browser's own, which is to show it)
  * @throws {DOMException} `NotAllowedError` when the user cancels or the browser
  *         refuses; `NotSupportedError` or a `TypeError` when there is no picker
  * @throws {Error} when the chosen source has no video
  */
-export async function startDisplayCapture(cursor?: CursorMode): Promise<DisplayCapture> {
+export async function startDisplayCapture(): Promise<DisplayCapture> {
   const options = {
-    video: cursor ? { cursor } : true,
+    video: true,
     audio: false,
     // The presenter page must not be offered: it would film itself.
     selfBrowserSurface: 'exclude',

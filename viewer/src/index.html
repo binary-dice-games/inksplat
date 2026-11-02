@@ -525,6 +525,7 @@
         word-break: break-all;
       }
       .avatar-row {
+        flex-wrap: wrap;
         display: flex;
         gap: 8px;
         align-items: center;
@@ -695,7 +696,8 @@
         <label for="avatar">Your picture (optional)</label>
         <div class="avatar-row">
           <img id="avatarPreview" alt="" hidden />
-          <input id="avatar" type="file" accept="image/*" />
+          <button id="avatarPick" type="button">Choose picture</button>
+          <input id="avatar" type="file" accept="image/*" hidden />
           <button id="avatarClear" type="button">Remove</button>
         </div>
         <p id="avatarHint" class="muted">Shown on your cursor instead of your name.</p>
