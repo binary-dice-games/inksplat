@@ -3144,7 +3144,10 @@ export class Whiteboard {
         svgEl('path', { d, fill: 'none', stroke: item.color, 'stroke-width': item.width, 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }),
       );
     } else if (item.kind === 'text') {
-      const text = svgEl('text', { x: item.x, y: item.y, 'font-size': item.size, fill: item.color, 'dominant-baseline': 'hanging', 'font-family': FONT_STACKS[item.font ?? 'sans'] });
+      const text = svgEl('text', { x: item.x, y: item.y, 'font-size': item.size, fill: item.color, 'dominant-baseline': 'hanging' });
+      if (item.font) {
+        text.style.fontFamily = FONT_STACKS[item.font]; // a style: the sheet's font rule beats an attribute
+      }
       if (item.color.toLowerCase() === '#ffffff') {
         text.style.stroke = '#1c2024';
       }
