@@ -83,11 +83,11 @@ describe('the bar over a selected line or text', () => {
       expect(t.get(`${t.me}.2`)).toMatchObject({ size: 33 });
       t.button('Font: Monospace').click();
       expect(t.get(`${t.me}.2`)).toMatchObject({ font: 'mono' });
-      expect(t.root.querySelector('.text-item text')!.getAttribute('font-family')).toContain(
-        'mono',
-      );
+      const shown = () => t.root.querySelector<SVGTextElement>('.text-item text')!;
+      expect(shown().style.fontFamily).toContain('mono');
       t.button('Font: Sans serif').click();
       expect(t.get(`${t.me}.2`)).not.toHaveProperty('font');
+      expect(shown().style.fontFamily).toBe('');
       t.button('Colour: green').click();
       expect(t.get(`${t.me}.2`)).toMatchObject({ color: '#30a46c' });
     } finally {
