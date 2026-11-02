@@ -18,11 +18,6 @@ of the shared video instead of being part of it.
 The collab code is copied from [nymph](https://github.com/binary-dice-games/nymph)
 and adapted (see [NOTICE](NOTICE)).
 
-**Status:** works end to end on Chromium. CI builds and tests Linux, macOS and
-Windows. Not done yet: tests on real phones and other browsers, a load test
-with many viewers, a clear message for a version mismatch. See
-[spec/INDEX.md](spec/INDEX.md).
-
 ## Quick Start
 
 1. Open the presenter page (`present.html`) and press **Start session**.
