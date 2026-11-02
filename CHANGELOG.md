@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Threads can be tied between any two points: a pin is put at each end that has none. With the thread tool, dragging from a point of a thread splits it with a new pin and pulls a new thread from there; with the pin tool, a click on a thread splits it with a pin. The two ends that meet at the new pin have no head, so the thread keeps its heads.
+- A pin can have a label: its bar has a button for no label (the default) and three for the size of the text; the label is dragged to move it and clicked to write it again.
+- A click with the laser (no drag) makes a ping, rings that spread from the point and fade, instead of a trail.
 - A selected line has a bar over it to change its width and colour; a selected text, its size, font (sans serif, serif, monospace, handwriting) and colour.
 - A tutorial page on the site (`tutorial.html`, linked from the home page, its About box and the join form): how to start, join and share a screen, every tool with screenshots and animations, sharing pictures and files by drag and drop, and the shortcuts that have no button.
 - A faint line under the canvas buttons says for a few seconds how to use the tool just picked (and the pointer's mode, or the selection), like "Drag to draw · Press 2 again for another width". It can be turned off (**Settings** on the presenter page, the join form for viewers), folds away with **Tools** and is not shown on phone-sized screens.

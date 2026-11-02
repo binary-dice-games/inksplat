@@ -191,7 +191,16 @@ export function cleanItem(item) {
   if (item.kind === 'pin') {
     const on = ID.test(item.on ?? '') && finite(item.u, -3, 3) && finite(item.v, -3, 3) ? { on: item.on, u: item.u, v: item.v } : {};
     const shape = PIN_SHAPES.includes(item.shape) && item.shape !== 'round' ? { shape: item.shape } : {};
-    return finite(item.x) && finite(item.y) && COLOR.test(item.color ?? '') ? { ...base, x: item.x, y: item.y, color: item.color, ...shape, ...on } : null;
+    // A bad label is left out, not the pin: the label is text with a size and where it was dragged to.
+    const labelled = typeof item.label === 'string' && item.label.trim() !== '' && item.label.length <= LABEL_MAX && !/[\r\n]/.test(item.label);
+    const label = labelled
+      ? {
+          label: item.label,
+          ...(LABEL_SIZES.includes(item.ls) && item.ls !== LABEL_SIZES[1] ? { ls: item.ls } : {}),
+          ...(finite(item.lx, -2000, 2000) && finite(item.ly, -2000, 2000) ? { lx: item.lx, ly: item.ly } : {}),
+        }
+      : {};
+    return finite(item.x) && finite(item.y) && COLOR.test(item.color ?? '') ? { ...base, x: item.x, y: item.y, color: item.color, ...shape, ...label, ...on } : null;
   }
   if (item.kind === 'arrow') {
     if (!ID.test(item.from ?? '') || !ID.test(item.to ?? '') || item.from === item.to || !COLOR.test(item.color ?? '') || !ARROW_HEADS.includes(item.heads)) {
@@ -862,6 +871,8 @@ const MODE_ICONS = {
   emote: '<circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="9" cy="10" r="1.3" fill="currentColor"/><circle cx="15" cy="10" r="1.3" fill="currentColor"/><path d="M8 14.5q4 4 8 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>',
 };
 const LASER_MS = 1200; // how long each point of a laser trail lasts
+const PING_MS = 900; // the life of a ping (the laser clicked): rings that spread and fade
+const PING_PX = 44; // how far (screen pixels) the outer ring spreads
 const EMOTE_MS = 2000; // the life of an emote; a click on it starts it again
 const EMOTE_PX = 40; // the size of an emote on screen, before it grows
 const EMOTE_GROW = 1.3; // how much bigger each click makes it
@@ -956,6 +967,13 @@ function cutoutFilter(id, x, y, w, h, pad) {
 /** The drawn radius of a bare pin, and the radius of the invisible circle that catches the pointer over it (twice as large as the pin was). */
 const PIN_RADIUS = 2.5;
 const PIN_HIT = 9;
+/** The font sizes of a pin's label (small, medium, large), the longest label, and the default gap from its pin to the label. */
+const LABEL_SIZES = [10, 14, 21];
+const LABEL_MAX = 60;
+const LABEL_GAP = 11;
+const labelSize = (item) => item.ls ?? LABEL_SIZES[1];
+/** Where the top left of the label of `item` (a pin drawn at `at`) is: by default to the right, centred on the pin; `lx`, `ly` move it. */
+const labelOrigin = (item, at) => ({ x: at.x + (item.lx ?? LABEL_GAP), y: at.y + (item.ly ?? -labelSize(item) * 0.6) });
 
 /** How far below its centre the pin of a note, picture or link is (before it is turned); 0 for what has no pin. */
 function pinOffset(item) {
@@ -1137,6 +1155,52 @@ export function threadCurve(a, b, seed = 0.5) {
   return { c, d: `M${round1(a.x)} ${round1(a.y)}Q${round1(c.x)} ${round1(c.y)} ${round1(b.x)} ${round1(b.y)}` };
 }
 
+/** The `seed` of the thread with this id: threads between the same pins differ, but each keeps its own hang. */
+export function threadSeed(id) {
+  return [...id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1000, 7) / 1000;
+}
+
+/**
+ * The point of the thread from `a` to `b` (as {@link threadCurve} hangs it) nearest to `p`: where a
+ * press on the thread is, so that a pin put there sits on the line.
+ * @returns {{x: number, y: number}}
+ */
+export function nearestOnThread(a, b, p, seed = 0.5) {
+  const { c } = threadCurve(a, b, seed);
+  const at = (t) => ({ x: (1 - t) ** 2 * a.x + 2 * (1 - t) * t * c.x + t * t * b.x, y: (1 - t) ** 2 * a.y + 2 * (1 - t) * t * c.y + t * t * b.y });
+  let lo = 0;
+  let hi = 1;
+  let best = at(0);
+  // Sampled, then again over the stretch around the best sample.
+  for (let pass = 0; pass < 3; ++pass) {
+    let bestT = lo;
+    let bestD = Infinity;
+    for (let k = 0; k <= 32; ++k) {
+      const t = lo + ((hi - lo) * k) / 32;
+      const q = at(t);
+      const d = Math.hypot(q.x - p.x, q.y - p.y);
+      if (d < bestD) {
+        bestD = d;
+        bestT = t;
+        best = q;
+      }
+    }
+    const step = (hi - lo) / 32;
+    lo = Math.max(0, bestT - step);
+    hi = Math.min(1, bestT + step);
+  }
+  return best;
+}
+
+/**
+ * The heads of the two threads a thread with `heads` is split into at a new pin: the ends that meet
+ * at the pin have none, so that together they have the heads the thread had.
+ * @returns {{first: string, second: string}} the heads of the part from the source, and of the part to the destination
+ */
+export function splitHeads(heads) {
+  return { first: heads === 'start' || heads === 'both' ? 'start' : 'none', second: heads === 'end' || heads === 'both' ? 'end' : 'none' };
+}
+
 const BOARD_FORMAT = 'inksplat-board';
 
 const NOTE_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -1238,7 +1302,7 @@ const STRINGS = {
   pointer: 'Pointer: use the page below, drag over the board to select (Esc)',
   pointerModeNames: {
     cursor: 'Cursor',
-    laser: 'Laser pointer: drag to leave a trail',
+    laser: 'Laser pointer: drag to leave a trail, click to ping',
     emote: 'Emotes: press, pick one and let go (click one to make it bigger)',
     magnify: 'Magnifier: the wheel changes how much it enlarges',
   },
@@ -1257,6 +1321,9 @@ const STRINGS = {
   widthNames: { thin: 'Thin', normal: 'Normal', thick: 'Thick' },
   sizeLabel: 'Text size',
   sizeNames: { small: 'Small', medium: 'Medium', large: 'Large' },
+  labelLabel: 'Label',
+  noLabel: 'No label',
+  typeLabel: 'Type the label, then Enter',
   fontLabel: 'Font',
   fontNames: { sans: 'Sans serif', serif: 'Serif', mono: 'Monospace', hand: 'Handwriting' },
   pinShapeNames: { round: 'Round', square: 'Square', diamond: 'Diamond', triangle: 'Triangle', star: 'Star' },
@@ -1289,7 +1356,7 @@ const STRINGS = {
   // The faint line under the canvases on how to use the tool in hand; {key} is the tool's number.
   toolHints: {
     cursor: 'Drag from an empty place to select \u00b7 Press {key} again for the laser, emotes or magnifier',
-    laser: 'Drag to leave a trail that fades \u00b7 Esc for the cursor',
+    laser: 'Drag to leave a trail that fades \u00b7 Click to ping \u00b7 Esc for the cursor',
     emote: 'Press, move towards a face and let go \u00b7 Click an emote to grow it \u00b7 Esc for the cursor',
     magnify: 'The wheel changes how much the lens enlarges \u00b7 Esc for the cursor',
     pen: 'Drag to draw \u00b7 Press {key} again for another width',
@@ -1297,8 +1364,8 @@ const STRINGS = {
     sticker: 'Click to put a sticker down \u00b7 Press {key} again for the next one',
     eraser: 'Drag over what to remove; it goes when you let go',
     note: 'Click to put a note down, or drag out its size \u00b7 Press {key} again for another shape',
-    pin: 'Click to put a pin down \u00b7 Press {key} again for another shape',
-    arrow: 'Drag from a pin to another to tie a thread \u00b7 Press {key} again for other heads',
+    pin: 'Click to put a pin down, or on a thread to split it \u00b7 Press {key} again for another shape',
+    arrow: 'Drag between any two points to tie a thread, or from a thread to split it \u00b7 Press {key} again for other heads',
     selected: 'Drag to move it \u00b7 Delete removes it \u00b7 Ctrl+C copies it \u00b7 Esc deselects',
     group: 'Drag any of them to move them all \u00b7 Delete removes them \u00b7 Ctrl+C / Ctrl+X copy or cut \u00b7 Esc deselects',
   },
@@ -1422,6 +1489,7 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .queue .turn:hover { background: var(--wb-hover); }
 svg.board .note-item { cursor: default; }
 svg.board .arrow-item, svg.board .pin-item { cursor: pointer; }
+svg.board .pin-item.own .pin-label { cursor: move; }
 svg.board.arrow, svg.board.pin { cursor: crosshair; }
 .item.selected .paper { stroke: var(--wb-accent); stroke-width: 2.5; }
 .item.selected .cut-edge, .item.drop-target .cut-edge { flood-color: var(--wb-accent); flood-opacity: 1; }
@@ -1577,8 +1645,10 @@ export class Whiteboard {
     this.inkSeq = 0;
     this.trails = new Map(); // `${peer}:${id}` -> laser trail {node, pts: [{x, y, t}], seq, color}
     this.emotes = new Map(); // emote id -> {name, x, y, level, born, rise, node}
+    this.pings = new Map(); // `${peer}:${id}` -> ping {x, y, color, born, node}
     this.fxSeq = 0;
-    this.lasing = null; // the laser trail being drawn here
+    this.lasing = null; // the laser trail being drawn here (or a laser pressed that may yet be a ping)
+    this.labelDrag = null; // the label of a pin being dragged
     this.emoteWheel = null; // the emote wheel while it is open
     this.lensPower = 2.5;
     this.lensSig = ''; // what the copy of the content in the lens was made from
@@ -2477,6 +2547,8 @@ export class Whiteboard {
       this.remoteInk(from, m);
     } else if (m.t === 'laser') {
       this.remoteLaser(from, m);
+    } else if (m.t === 'ping') {
+      this.remotePing(from, m);
     } else if (m.t === 'emote') {
       this.remoteEmote(m);
     } else if (m.t === 'file') {
@@ -3068,8 +3140,7 @@ export class Whiteboard {
     if (!a || !b) {
       return;
     }
-    const seed = [...item.id].reduce((n, c) => (n * 31 + c.charCodeAt(0)) % 1000, 7) / 1000;
-    const { c, d } = threadCurve(a, b, seed);
+    const { c, d } = threadCurve(a, b, threadSeed(item.id));
     const heads = [];
     const head = (tip, from) => {
       const len = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
@@ -3186,6 +3257,16 @@ export class Whiteboard {
         svgEl('circle', { cx: at.x - PIN_RADIUS * 0.3, cy: at.y - PIN_RADIUS * 0.32, r: PIN_RADIUS * 0.3, fill: 'rgba(255,255,255,0.6)' }),
       );
       g.append(svgEl('circle', { class: 'hit box', cx: at.x, cy: at.y, r: PIN_HIT, fill: 'transparent' }), shadow);
+      if (item.label) {
+        // Written like a text: its colour, a halo; dragged on its own to where it reads best.
+        const where = labelOrigin(item, at);
+        const label = svgEl('text', { class: 'pin-label', x: where.x, y: where.y, 'font-size': labelSize(item), fill: item.color, 'dominant-baseline': 'hanging' });
+        if (item.color.toLowerCase() === '#ffffff') {
+          label.style.stroke = '#1c2024';
+        }
+        label.textContent = item.label;
+        g.append(label);
+      }
       if (item.lock) {
         g.append(lockBadge(at.x + 8, at.y - 10, item.lock));
       }
@@ -3822,8 +3903,8 @@ export class Whiteboard {
     if (this.pointerMode() === 'laser') {
       this.board.setPointerCapture?.(ev.pointerId);
       this.fxSeq += 1;
-      this.lasing = { key: `${this.session.me.id}:l${this.fxSeq}`, id: `l${this.fxSeq}`, seq: 0, pending: [], sentAt: 0 };
-      this.laserTo(p);
+      // Nothing is drawn until the pointer moves: a click alone is a ping.
+      this.lasing = { key: `${this.session.me.id}:l${this.fxSeq}`, id: `l${this.fxSeq}`, seq: 0, pending: [], sentAt: 0, first: p, x0: ev.clientX, y0: ev.clientY, drawn: false };
       return;
     }
     if (this.emoteWheel?.sticky) {
@@ -3839,6 +3920,72 @@ export class Whiteboard {
     }
     this.board.setPointerCapture?.(ev.pointerId);
     this.openWheel(ev, p);
+  }
+
+  /** @private The laser pressed moved with the pointer `ev`: once it is further than a click, the trail starts where it was pressed. */
+  laserMove(ev) {
+    const l = this.lasing;
+    if (!l.drawn) {
+      if (Math.hypot(ev.clientX - l.x0, ev.clientY - l.y0) < 4) {
+        return;
+      }
+      l.drawn = true;
+      this.laserTo(l.first);
+    }
+    this.laserTo(this.eventPoint(ev));
+  }
+
+  /** @private The laser let go: the end of a trail, or (pressed and let go in place) a ping. */
+  laserUp(cancelled) {
+    const l = this.lasing;
+    if (l.drawn) {
+      this.sendLaser();
+    }
+    this.lasing = null;
+    if (!l.drawn && !cancelled) {
+      this.ping(l.first);
+    }
+  }
+
+  /**
+   * Pings at `at` (board units) for everyone on this canvas: rings that spread from the point and
+   * fade in under a second, in the colour of this person. Nothing is stored on the board.
+   * @returns {string | null} its id, null for a bad point
+   */
+  ping(at) {
+    if (!finite(at?.x) || !finite(at?.y)) {
+      return null;
+    }
+    this.fxSeq += 1;
+    const id = `p${this.fxSeq}`;
+    const x = round1(at.x);
+    const y = round1(at.y);
+    this.showPing(`${this.session.me.id}:${id}`, x, y, this.session.me.color);
+    this.send({ t: 'ping', id, x, y, pg: this.page }, { fast: true });
+    return id;
+  }
+
+  /** @private A peer's ping (lossy; validated, since peers send it). */
+  remotePing(from, m) {
+    if (!ID.test(m.id ?? '') || !finite(m.x) || !finite(m.y) || (m.pg ?? 0) !== this.page) {
+      return;
+    }
+    const key = `${from}:${m.id}`;
+    if (this.pings.has(key) || this.pings.size >= 40) {
+      return; // repeated, or too many at once
+    }
+    this.showPing(key, m.x, m.y, this.session.peers().find((q) => q.id === from)?.color);
+  }
+
+  /** @private Starts a ping drawn at (x, y) in `color` (a bad one gets the default red). */
+  showPing(key, x, y, color) {
+    const c = COLOR.test(color ?? '') ? color : '#e5484d';
+    const node = svgEl('g', { class: 'ping', fill: 'none', 'pointer-events': 'none' });
+    node.append(svgEl('circle', { cx: x, cy: y, stroke: c }), svgEl('circle', { cx: x, cy: y, stroke: c }), svgEl('circle', { cx: x, cy: y, r: 0, fill: c, stroke: 'none' }));
+    this.liveGroup.append(node);
+    this.pings.get(key)?.node.remove();
+    this.pings.set(key, { x, y, color: c, born: performance.now(), node });
+    this.animate();
   }
 
   /** @private The laser here moved to `p`: drawn now, and sent to the others at most 30 times a second. */
@@ -4086,7 +4233,27 @@ export class Whiteboard {
       e.node.style.opacity = String(round1(f.opacity * 100) / 100);
       e.node.style.transform = `translate(${round1(f.x - f.size / 2)}px, ${round1(f.y - f.size / 2)}px) scale(${round1(f.pop * 100) / 100})`;
     }
-    if (this.trails.size || this.emotes.size) {
+    for (const [key, p] of this.pings) {
+      const k = (now - p.born) / PING_MS;
+      if (k >= 1) {
+        p.node.remove();
+        this.pings.delete(key);
+        continue;
+      }
+      // Two rings, the second a little behind, spreading by the same distance whatever the zoom; a dot at the centre.
+      const px = 1 / scale;
+      const [outer, inner, dot] = p.node.children;
+      const ring = (node, q) => {
+        const e = Math.min(1, Math.max(0, q));
+        node.setAttribute('r', round1(PING_PX * px * (1 - (1 - e) ** 2) * 100) / 100);
+        node.setAttribute('stroke-width', round1(3 * px * (1 - e * 0.6) * 100) / 100);
+        node.setAttribute('opacity', round1((1 - e) * 100) / 100);
+      };
+      ring(outer, k);
+      ring(inner, k * 1.5 - 0.5);
+      dot.setAttribute('r', round1(5 * px * (1 - k) * 100) / 100);
+    }
+    if (this.trails.size || this.emotes.size || this.pings.size) {
       this.animate();
     }
   }
@@ -4099,8 +4266,12 @@ export class Whiteboard {
     for (const e of this.emotes.values()) {
       e.node.remove();
     }
+    for (const p of this.pings.values()) {
+      p.node.remove();
+    }
     this.trails.clear();
     this.emotes.clear();
+    this.pings.clear();
     this.lasing = null;
     this.closeWheel(false);
   }
@@ -4363,10 +4534,20 @@ export class Whiteboard {
     if (this.readOnlyFlag) {
       return;
     }
+    const label = this.labelAt(ev);
+    if (label && this.labelPress(ev, label)) {
+      return;
+    }
     const hit = this.pinAt(this.eventPoint(ev)) ?? this.itemAt(ev); // a pin wins over what lies on it
     if (hit && this.group.has(hit.id) && this.tool === 'pointer') {
       this.beginGroupDrag(ev, this.eventPoint(ev));
       this.groupDrag.pressed = hit.id;
+      return;
+    }
+    if (hit?.kind === 'arrow' && this.tool === 'pin' && this.canEdit(hit)) {
+      // A click on a thread with the pin tool splits it with a pin there.
+      ev.preventDefault();
+      this.splitThread(hit.id, this.eventPoint(ev));
       return;
     }
     const mine = hit && this.canEdit(hit) ? hit : null; // what can be changed by this peer
@@ -4417,13 +4598,14 @@ export class Whiteboard {
       this.addPin(p);
     } else if (this.tool === 'arrow') {
       const source = this.pinAt(p);
-      const host = source ? null : this.attachment(p, null).on;
       if (source) {
         this.beginThread(source.id, ev, null);
-      } else if (host) {
-        // Pressed on an element away from its pins: the thread starts from a pin put there, made
-        // only once the thread is tied (let go anywhere else, and there is no pin).
-        this.beginThread(null, ev, null, { at: p, host });
+      } else {
+        // Pressed anywhere else: the thread starts from a pin put there, made only once the thread is
+        // pulled and let go (a click leaves nothing). On a thread, that pin splits it.
+        const thread = hit?.kind === 'arrow' && this.canEdit(hit) ? hit : null;
+        const on = thread ? this.threadPoint(thread, p) : null;
+        this.beginThread(null, ev, null, on ? { at: on, split: thread.id } : { at: p, host: this.attachment(p, null).on });
       }
     } else if (this.tool === 'sticker') {
       this.local(() => this.model.add({ kind: 'sticker', x: round1(p.x), y: round1(p.y), size: 32, name: this.style.sticker }));
@@ -4432,8 +4614,10 @@ export class Whiteboard {
 
   /** @private */
   move(ev) {
-    if (this.lasing) {
-      this.laserTo(this.eventPoint(ev));
+    if (this.labelDrag) {
+      this.dragLabel(ev);
+    } else if (this.lasing) {
+      this.laserMove(ev);
     } else if (this.emoteWheel) {
       this.aimWheel(ev);
     } else if (this.drawing) {
@@ -4677,6 +4861,13 @@ export class Whiteboard {
         for (const shape of PIN_SHAPES) {
           const icon = pinHead(shape, 12, 12, 7, { fill: 'none', stroke: 'currentColor', 'stroke-width': 1.8 }).outerHTML;
           parts.push(button(`${s.shapeLabel}: ${s.pinShapeNames[shape]}`, `<svg viewBox="0 0 24 24">${icon}</svg>`, (item.shape ?? 'round') === shape, () => change({ shape: shape === 'round' ? undefined : shape })));
+        }
+        rule();
+        // No label (the usual), or one in a size: a size on a pin without a label asks for its text.
+        const glyph = (px) => `<text x="12" y="${12 + px * 0.35}" font-size="${px}" font-weight="700" text-anchor="middle" fill="currentColor" font-family="system-ui, sans-serif">A</text>`;
+        parts.push(button(s.noLabel, `<svg viewBox="0 0 24 24">${glyph(14)}<path d="M4 20L20 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>`, !item.label, () => item.label && change({ label: undefined, ls: undefined, lx: undefined, ly: undefined })));
+        for (const [i, size] of LABEL_SIZES.entries()) {
+          parts.push(button(`${s.labelLabel}: ${s.sizeNames[SIZE_NAMES[i]]}`, `<svg viewBox="0 0 24 24">${glyph([10, 14, 19][i])}</svg>`, !!item.label && labelSize(item) === size, () => (item.label ? change({ ls: size === LABEL_SIZES[1] ? undefined : size }) : this.editLabel(item, size))));
         }
         rule();
         swatches(PALETTE, item.color, 'color');
@@ -5043,9 +5234,10 @@ export class Whiteboard {
 
   /** @private */
   up(ev, cancelled = false) {
-    if (this.lasing) {
-      this.sendLaser();
-      this.lasing = null;
+    if (this.labelDrag) {
+      this.labelUp(cancelled);
+    } else if (this.lasing) {
+      this.laserUp(cancelled);
     } else if (this.emoteWheel && !this.emoteWheel.sticky) {
       // Let go on an emote: it is put where the wheel opened. Let go in the middle, after a click:
       // the wheel stays open for a click on one (and closes on a click anywhere else).
@@ -5070,22 +5262,23 @@ export class Whiteboard {
       t.dot?.remove();
       const end = this.eventPoint(ev);
       const target = cancelled ? null : this.threadTarget(end, t);
-      const host = cancelled || target ? null : this.threadHost(end, t);
-      // The pin the thread starts from: the one pressed on, or a new one where the element was pressed.
-      const from = () => t.from ?? this.addPin(t.origin.at);
+      const moved = Math.hypot(ev.clientX - t.x0, ev.clientY - t.y0) >= 4;
+      // The pin the thread starts from: the one pressed on, or a new one where it was pressed (which
+      // splits the thread it was pressed on).
+      const from = () => t.from ?? (t.origin.split ? this.splitThread(t.origin.split, t.origin.at) : this.addPin(t.origin.at));
       if (target) {
         const source = from();
         if (source) {
           this.addArrow(source, target.id);
         }
-      } else if (host) {
-        // Let go over an element: a pin is put there, on it, and the thread is tied to that pin.
+      } else if (!cancelled && moved && !this.threadOnOwnElement(end, t)) {
+        // Let go anywhere else (not on the element it started on): a pin is put there, and the thread is tied to it.
         const source = from();
         const pin = source ? this.addPin(end) : null;
         if (pin) {
           this.addArrow(source, pin);
         }
-      } else if (t.from && !cancelled && Math.hypot(ev.clientX - t.x0, ev.clientY - t.y0) < 4) {
+      } else if (t.from && !cancelled && !moved) {
         // Pressed and let go on the pin: it is selected, if it is yours and can be changed.
         const source = this.model.get(t.from);
         if (source && SELECTABLE.has(source.kind)) {
@@ -5173,7 +5366,8 @@ export class Whiteboard {
   /**
    * @private Starts a thread from the pin of `source`. `restore` is the tool to go back to when it
    * is let go (a thread pulled from a pin with another tool in hand), or null. With `origin` (a
-   * point `at` on the element `host`) and no source, it starts from a pin not put yet, shown there.
+   * point `at`, on the element `host` if any, or on the thread `split`) and no source, it starts
+   * from a pin not put yet, shown there; a pin on a thread splits it.
    */
   beginThread(source, ev, restore, origin = null) {
     this.popover.hidden = true;
@@ -5223,14 +5417,14 @@ export class Whiteboard {
     t.node.setAttribute('d', threadCurve(from, end, 0.5).d);
     t.ring.setAttribute('cx', end.x);
     t.ring.setAttribute('cy', end.y);
-    // The ring shows where it will be tied: a pin in reach, or a new pin on the element under it.
-    t.ring.style.display = target || this.threadHost(p, t) ? '' : 'none';
+    // The ring shows where it will be tied: a pin in reach, or a new pin where it is let go.
+    t.ring.style.display = target || !this.threadOnOwnElement(p, t) ? '' : 'none';
   }
 
   /** @private The element the thread being pulled `t` starts on (its source, or what its pin is on), or null. */
   threadElement(t) {
     if (t.origin) {
-      return t.origin.host;
+      return t.origin.host ?? null;
     }
     const source = this.model.get(t.from);
     return source?.kind === 'pin' ? (source.on ?? null) : (source?.id ?? null);
@@ -5242,23 +5436,144 @@ export class Whiteboard {
    */
   threadTarget(p, t) {
     const target = this.pinAt(p, t.from);
-    if (target && t.origin && (target.id === t.origin.host || (target.kind === 'pin' && target.on === t.origin.host))) {
+    if (target && t.origin?.host && (target.id === t.origin.host || (target.kind === 'pin' && target.on === t.origin.host))) {
       return null;
     }
     return target;
   }
 
+  /** @private Whether `p` is on the element the thread being pulled `t` starts on (a thread from an element to itself is refused). */
+  threadOnOwnElement(p, t) {
+    const own = this.threadElement(t);
+    return !!own && this.attachment(p, null).on === own;
+  }
+
+  /** @private The point of `thread` nearest `p`, or null when an end of it is gone. */
+  threadPoint(thread, p) {
+    const a = pinPoint(this.model.get(thread.from), this.lookup);
+    const b = pinPoint(this.model.get(thread.to), this.lookup);
+    return a && b ? nearestOnThread(a, b, p, threadSeed(thread.id)) : null;
+  }
+
   /**
-   * @private The element (a note, picture, link or sticker) under `p` that the thread being pulled
-   * `t` would get a new pin on when let go there; null over the board, or over the element the
-   * thread starts on (a thread from an element to itself).
+   * Splits the thread `id` in two with a new pin at the point of it nearest `at`: the thread now
+   * ends at the pin and a new one goes on from it to where it ended. The ends that meet at the pin
+   * have no head, so that together they have the heads the thread had.
+   * @returns {string | null} the id of the new pin, null when the thread is not there or is locked against this person
    */
-  threadHost(p, t) {
-    const host = this.attachment(p, null).on;
-    if (!host || host === this.threadElement(t)) {
+  splitThread(id, at) {
+    const thread = this.model.get(id);
+    if (thread?.kind !== 'arrow' || !this.canEdit(thread)) {
       return null;
     }
-    return host;
+    const where = this.threadPoint(thread, at);
+    const pin = where ? this.addPin(where) : null;
+    if (!pin) {
+      return null;
+    }
+    const heads = splitHeads(thread.heads);
+    this.local(() => this.model.change(id, { to: pin, heads: heads.first }));
+    this.local(() => this.model.add({ kind: 'arrow', from: pin, to: thread.to, color: thread.color, heads: heads.second, ...(thread.lock ? { lock: thread.lock } : {}) }));
+    return pin;
+  }
+
+  // ── Pin labels ───────────────────────────────────────────────────────────
+
+  /** @private The pin whose label is the topmost item under a pointer event, or null. */
+  labelAt(ev) {
+    for (const node of this.root.elementsFromPoint(ev.clientX, ev.clientY)) {
+      const g = node.closest?.('.item');
+      if (g && this.itemsGroup.contains(g)) {
+        return node.classList.contains('pin-label') ? this.model.get(g.dataset.id) : null;
+      }
+    }
+    return null;
+  }
+
+  /** @private A press on the label of `pin`: it is selected, and dragged to move the label (a click on it, selected, writes it). */
+  labelPress(ev, pin) {
+    if (!['pointer', 'pin'].includes(this.tool) || !this.canEdit(pin) || this.group.has(pin.id)) {
+      return false;
+    }
+    ev.preventDefault();
+    this.popover.hidden = true;
+    this.board.setPointerCapture?.(ev.pointerId);
+    const was = this.selected === pin.id;
+    this.select(pin.id);
+    const at = pinPoint(pin, this.lookup);
+    const o = labelOrigin(pin, at);
+    this.labelDrag = { id: pin.id, from: this.eventPoint(ev), dx: o.x - at.x, dy: o.y - at.y, was, moved: false, x0: ev.clientX, y0: ev.clientY, to: null };
+    return true;
+  }
+
+  /** @private The label pressed follows the pointer, once it has moved further than a click. */
+  dragLabel(ev) {
+    const d = this.labelDrag;
+    if (!d.moved) {
+      if (Math.hypot(ev.clientX - d.x0, ev.clientY - d.y0) < 3) {
+        return;
+      }
+      d.moved = true;
+      this.selbar.classList.add('moving');
+    }
+    const p = this.eventPoint(ev);
+    d.to = { x: round1(d.dx + p.x - d.from.x), y: round1(d.dy + p.y - d.from.y) };
+    this.placeLabel(d.id, d.to);
+  }
+
+  /** @private Puts the drawn label of the pin `id` at `off` from its pin. */
+  placeLabel(id, off) {
+    const pin = this.model.get(id);
+    const at = pin ? pinPoint(pin, this.lookup) : null;
+    const node = this.nodes.get(id)?.node.querySelector('.pin-label');
+    if (at && node) {
+      node.setAttribute('x', at.x + off.x);
+      node.setAttribute('y', at.y + off.y);
+    }
+  }
+
+  /** @private The label let go: where it was dragged to is kept; a click on it, selected already, writes it. */
+  labelUp(cancelled) {
+    const d = this.labelDrag;
+    this.labelDrag = null;
+    this.selbar.classList.remove('moving');
+    const pin = this.model.get(d.id);
+    if (!pin) {
+      return;
+    }
+    if (d.moved && !cancelled) {
+      this.local(() => this.model.change(d.id, { lx: d.to.x, ly: d.to.y }));
+    } else if (d.moved) {
+      this.placeLabel(d.id, { x: d.dx, y: d.dy });
+    } else if (d.was && !cancelled) {
+      this.editLabel(pin);
+    }
+  }
+
+  /** @private A text box over the label of `pin` (new, in `size`, or written already): Enter keeps it, Escape drops the change, an empty one takes the label away. */
+  editLabel(pin, size = labelSize(pin)) {
+    this.finishText();
+    const ta = htmlEl('textarea', { class: 'note', maxlength: String(LABEL_MAX), rows: '1', 'aria-label': this.strings.labelLabel, placeholder: this.strings.typeLabel });
+    ta.value = pin.label ?? '';
+    const o = labelOrigin({ ...pin, ls: size }, pinPoint(pin, this.lookup));
+    this.editing = { item: pin, label: true, x: o.x, y: o.y, size, color: pin.color, node: ta };
+    this.nodes.get(pin.id)?.node.querySelector('.pin-label')?.setAttribute('opacity', '0');
+    ta.style.color = pin.color;
+    ta.addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        this.finishText(false);
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        this.finishText(true);
+      }
+    });
+    ta.addEventListener('input', () => this.sizeTextarea());
+    ta.addEventListener('blur', () => this.finishText(true));
+    this.root.append(ta);
+    this.placeTextarea();
+    ta.focus();
   }
 
   /**
@@ -5711,6 +6026,17 @@ export class Whiteboard {
       this.nodes.get(e.item.id)?.node.removeAttribute('opacity');
       this.nodes.get(e.item.id)?.node.classList.remove('editing');
     }
+    if (e.label) {
+      this.nodes.get(e.item.id)?.node.querySelector('.pin-label')?.removeAttribute('opacity');
+      const pin = this.model.get(e.item.id);
+      const label = e.node.value.replace(/\s+/g, ' ').trim().slice(0, LABEL_MAX);
+      if (commit && pin && !label && pin.label) {
+        this.local(() => this.model.change(pin.id, { label: undefined, ls: undefined, lx: undefined, ly: undefined }));
+      } else if (commit && pin && label && (label !== pin.label || e.size !== labelSize(pin))) {
+        this.local(() => this.model.change(pin.id, { label, ls: e.size === LABEL_SIZES[1] ? undefined : e.size }));
+      }
+      return;
+    }
     if (e.note) {
       const kept = e.node.value.replace(/\s+$/, '').slice(0, LIMITS.text);
       if (commit && kept !== e.item.text && this.model.get(e.item.id)) {
@@ -5923,7 +6249,7 @@ export function drawingGate(drawing, { channel = 'wb', opsPerSecond = 50, now = 
     }
     const t = message?.t;
     // Cursors, the laser and emotes change nothing on the board: they go through even when drawing is locked.
-    if (t === 'cur' || t === 'laser' || t === 'emote') {
+    if (t === 'cur' || t === 'laser' || t === 'ping' || t === 'emote') {
       return true;
     }
     // Nothing relays a file longer than the board takes.
