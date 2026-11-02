@@ -122,6 +122,13 @@ export interface PinItem extends ItemBase {
   on?: string;
   u?: number;
   v?: number;
+  /** A short text beside the pin (one line, up to 60 characters); absent for none. */
+  label?: string;
+  /** The font size of the label (10, 14 or 21); absent for the middle one. */
+  ls?: number;
+  /** Where the top left of the label is from the pin, once it has been dragged; absent for the usual place, to its right. */
+  lx?: number;
+  ly?: number;
 }
 
 /** Which ends of a thread have a head: none, `start` (its source), `end` (its destination) or both. */
@@ -156,6 +163,23 @@ export function threadCurve(
   b: { x: number; y: number },
   seed?: number,
 ): { c: { x: number; y: number }; d: string };
+
+/** The `seed` of the thread with this id (threads between the same pins differ). */
+export function threadSeed(id: string): number;
+
+/** The point of the thread from `a` to `b` (as {@link threadCurve} hangs it) nearest to `p`. */
+export function nearestOnThread(
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+  p: { x: number; y: number },
+  seed?: number,
+): { x: number; y: number };
+
+/**
+ * The heads of the two threads a thread with `heads` is split into at a new pin: the ends that meet at
+ * the pin have none, so together they have the heads the thread had.
+ */
+export function splitHeads(heads: ArrowHeads): { first: ArrowHeads; second: ArrowHeads };
 
 /** A file shared on the board. */
 export interface FileInfo {
@@ -455,6 +479,19 @@ export class Whiteboard {
   addEmote(name: string, at: { x: number; y: number }): string | null;
   /** Ties a thread between the pins of two items; null when read only or an item has no pin. */
   addArrow(from: string, to: string): string | null;
+  /**
+   * Splits the thread `id` in two with a new pin at the point of it nearest `at`: the thread now ends
+   * at the pin and a new one goes on from it to where it ended. The ends that meet at the pin have
+   * no head, so that together they have the heads the thread had. Returns the id of the pin; null
+   * when the thread is not there, is locked against this person, or the board is read only.
+   */
+  splitThread(id: string, at: { x: number; y: number }): string | null;
+  /**
+   * Pings at `at` (board units) for everyone on this canvas: rings that spread from the point and
+   * fade in under a second (what a click with the laser does). Nothing is stored. Returns its id,
+   * or null for a bad point.
+   */
+  ping(at: { x: number; y: number }): string | null;
   /**
    * Pins a web link (a card that opens the page when clicked); null when read only.
    * @throws {WhiteboardError} when `url` is not an http or https address

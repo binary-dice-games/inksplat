@@ -59,7 +59,7 @@ describe('tool hints', () => {
       t.wb.setTool('note');
       expect(t.shown()).toContain('Press 6 again for another shape');
       t.wb.setTool('arrow');
-      expect(t.shown()).toContain('Drag from a pin to another');
+      expect(t.shown()).toContain('Drag between any two points');
 
       t.wb.setTool('pointer');
       expect(t.shown()).toContain('Press 1 again for the laser');

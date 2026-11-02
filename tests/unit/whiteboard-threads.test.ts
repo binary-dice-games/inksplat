@@ -212,14 +212,12 @@ describe('the pin and thread tools', () => {
       const b = t.wb.addPin({ x: 400, y: 120 })!;
       const note = t.wb.addNote({ x: 250, y: 300 })!;
       t.wb.setTool('arrow');
-      // To empty board: nothing. From empty board: nothing.
+      // A thread being pulled is drawn, and nothing is left when it is cancelled.
       pointer(t.board, 'pointerdown', 100, 100);
-      expect(t.root.querySelector('.live path')).not.toBeNull(); // the thread being pulled
+      expect(t.root.querySelector('.live path')).not.toBeNull();
       pointer(t.board, 'pointermove', 300, 250);
-      pointer(t.board, 'pointerup', 300, 250);
+      pointer(t.board, 'pointercancel', 300, 250);
       expect(t.root.querySelector('.live path')).toBeNull();
-      pointer(t.board, 'pointerdown', 600, 400);
-      pointer(t.board, 'pointerup', 400, 120);
       expect(kinds(t).filter((k) => k === 'arrow')).toHaveLength(0);
 
       // Pin to pin, then pin to the pin of a note (near the top of it).
@@ -340,11 +338,11 @@ describe('the pin and thread tools', () => {
       const count = t.wb.items().length;
       t.wb.setTool('arrow');
 
-      // Let go over the board, or over the element it started on: nothing is left behind.
+      // Cancelled, or let go over the element it started on: nothing is left behind.
       pointer(t.board, 'pointerdown', 210, 220);
       expect(t.root.querySelector('.live circle.pending-pin')).not.toBeNull(); // the pin to be
       pointer(t.board, 'pointermove', 350, 50);
-      pointer(t.board, 'pointerup', 350, 50);
+      pointer(t.board, 'pointercancel', 350, 50);
       expect(t.root.querySelector('.live circle.pending-pin')).toBeNull();
       pointer(t.board, 'pointerdown', 210, 220);
       pointer(t.board, 'pointermove', 190, 230);
@@ -810,9 +808,9 @@ describe('pins attached to what they are put on', () => {
       press(t, 'pointerdown', 600, 300, { shiftKey: true });
       expect(t.inside.tool).toBe('pointer');
       press(t, 'pointerup', 600, 300, { shiftKey: true });
-      // Let go on nothing: the tool comes back and there is no new thread.
+      // Cancelled: the tool comes back and there is no new thread.
       press(t, 'pointerdown', 100, 100, { shiftKey: true });
-      press(t, 'pointerup', 650, 350, { shiftKey: true });
+      press(t, 'pointercancel', 650, 350, { shiftKey: true });
       expect(t.inside.tool).toBe('pointer');
       expect(t.wb.items().filter((i) => i.kind === 'arrow')).toHaveLength(5);
     } finally {
