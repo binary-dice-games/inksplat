@@ -27,7 +27,8 @@
  * quarters, and the bar over a selected element is kept inside the board (and hidden while the
  * element is dragged or a thread pulled). A note can be dragged
  * out to its size with the note tool, and a thread pressed on or let go over an element gets a new
- * pin there. A selected line or text has a bar for its width or size, font (`font` on a text) and colour. A sticker catches the pointer over its whole square (WebKit missed its <use>).
+ * pin there. The note tool always puts a new note down, even pressed on another element (it is then
+ * attached to it). A selected line or text has a bar for its width or size, font (`font` on a text) and colour. A sticker catches the pointer over its whole square (WebKit missed its <use>).
  * `saveBoard` gives the files as bytes and `loadBoard` takes them so (the page saves boards as
  * zips, with the files apart from the JSON). A drag of the pointer from an empty place selects
  * several items, which are moved, coloured, removed, copied, cut and pasted together; zoomed in, a
@@ -1863,14 +1864,21 @@ export class Whiteboard {
    * the current colour. Only its author edits, moves or deletes it; others can copy its text.
    * @param {{ width: number, height: number }} [size] its width and height (kept within a note's
    *   limits); then it is put straight, not turned. Without one it is the usual size, a little turned.
+   * @param {{ x: number, y: number }} [on] the note is attached to the element (note, picture or
+   *   link, the one on top) under this point, if any, and follows it; without it, on nothing
    * @returns {string | null} null when the board is read only
    */
-  addNote(at = { x: 500, y: 300 }, text = '', size = undefined) {
+  addNote(at = { x: 500, y: 300 }, text = '', size = undefined, on = undefined) {
     if (this.readOnlyFlag) {
       return null;
     }
     const dims = size ? noteBounds(size.width, size.height) : { size: NOTE_SIZE, ratio: 1 };
-    const op = this.local(() => this.model.add({ kind: 'note', x: round1(at.x), y: round1(at.y), ...dims, text: String(text).slice(0, LIMITS.text), color: pastel(this.style.color), ...(this.style.shape === 'square' ? {} : { shape: this.style.shape }), ...(size ? {} : turned(this.tilt())) }));
+    const item = { kind: 'note', x: round1(at.x), y: round1(at.y), ...dims, text: String(text).slice(0, LIMITS.text), color: pastel(this.style.color), ...(this.style.shape === 'square' ? {} : { shape: this.style.shape }), ...(size ? {} : turned(this.tilt())) };
+    const host = on ? this.hostUnder({ ...item, id: '' }, on) : null;
+    if (host) {
+      Object.assign(item, this.anchorFields({ ...item, on: host.id }, item, null));
+    }
+    const op = this.local(() => this.model.add(item));
     return op ? op.item.id : null;
   }
 
@@ -4660,15 +4668,16 @@ export class Whiteboard {
     }
     const mine = hit && this.canEdit(hit) ? hit : null; // what can be changed by this peer
     const drawn = hit && DRAWN.has(hit.kind) && (this.tool === 'pointer' || this.tool === hit.kind);
-    if (hit && (drawn || (SELECTABLE.has(hit.kind) && ['pointer', 'note', 'pin', 'sticker'].includes(this.tool)))) {
+    // The note tool always puts a new note down, on whatever element it is pressed on.
+    if (hit && (drawn || (SELECTABLE.has(hit.kind) && ['pointer', 'pin', 'sticker'].includes(this.tool)))) {
       this.select(hit.id);
       if (hit.kind === 'arrow') {
         ev.preventDefault();
         return;
       }
     }
-    // Your own items move with the pointer tool, and with the tool that makes them.
-    const grab = mine && (this.tool === 'pointer' || (this.tool === 'text' && mine.kind === 'text') || (this.tool === 'note' && mine.kind === 'note') || (this.tool === 'pin' && mine.kind === 'pin') || (this.tool === 'sticker' && (mine.kind === 'sticker' || mine.kind === 'image' || mine.kind === 'link' || mine.kind === 'note')));
+    // Your own items move with the pointer tool, and with the tool that makes them (not notes: see above).
+    const grab = mine && (this.tool === 'pointer' || (this.tool === 'text' && mine.kind === 'text') || (this.tool === 'pin' && mine.kind === 'pin') || (this.tool === 'sticker' && (mine.kind === 'sticker' || mine.kind === 'image' || mine.kind === 'link' || mine.kind === 'note')));
     if (this.tool === 'pointer' && !grab) {
       return;
     }
@@ -5494,7 +5503,8 @@ export class Whiteboard {
         return;
       }
       // A click puts a note of the usual size there; a drag puts one over the dragged bounds.
-      const id = b ? this.addNote({ x: b.x + b.w / 2, y: b.y + b.h / 2 }, '', { width: b.w, height: b.h }) : this.addNote(n.from);
+      // Pressed on an element, the note is attached to it.
+      const id = b ? this.addNote({ x: b.x + b.w / 2, y: b.y + b.h / 2 }, '', { width: b.w, height: b.h }, n.from) : this.addNote(n.from, '', undefined, n.from);
       this.setTool('pointer');
       if (id) {
         this.select(id); // its bar is there to change it as it is written

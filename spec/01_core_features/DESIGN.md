@@ -175,7 +175,8 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   520px (it would cover too much), or with `toolHints: false` / `setToolHints(false)` (the pages
   keep the choice: the presenter's Settings, the viewer's join form).
 - **Own items.** Items carry `author`; the author can drag them (pointer tool, or the
-  tool that made them). Clicking an element selects it (lines, texts and stickers with the pointer
+  tool that made them, except notes: the note tool always puts a new note down, attached to the
+  element it is pressed on, so notes can be stacked). Clicking an element selects it (lines, texts and stickers with the pointer
   or their own tool) and Delete or Backspace removes the selected one; the right button does
   nothing to elements, because removing what was under it surprised people. A drag with the
   pointer from an empty place (mouse or pen; touch is left to the page) selects what it passes over,
