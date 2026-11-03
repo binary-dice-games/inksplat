@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- With the note tool, a click or drag on another note (or picture or link) puts a new note there, attached to it, instead of selecting or moving the one underneath.
 - Join and settings dialogs: the picture row no longer overflows the dialog, and the picture field says "Choose picture" instead of "No file selected" when one is already saved.
 
 ### Removed

@@ -151,6 +151,48 @@ describe('sticky notes on the board', () => {
     }
   });
 
+  it('is made on another note with a click or a drag, attached to it, not grabbing it', async () => {
+    const t = await mount();
+    try {
+      const under = t.wb.addNote({ x: 200, y: 150 }, 'under')!;
+      resize(t.wb, under, 180);
+      t.wb.setTool('note');
+      pointer(t.board, 'pointerdown', 200, 150);
+      pointer(t.board, 'pointerup', 200, 150);
+      expect(t.wb.items()).toHaveLength(2);
+      const [first, made] = t.wb.items() as NoteItem[];
+      expect(first).toMatchObject({ id: under, x: 200, y: 150 }); // not moved
+      expect(made).toMatchObject({ kind: 'note', x: 200, y: 150, on: under });
+      expect(t.root.querySelector('textarea.sticky')).not.toBeNull(); // the new one is written
+
+      t.root.querySelector('textarea.sticky')!.dispatchEvent(new Event('blur'));
+      t.wb.setTool('note');
+      pointer(t.board, 'pointerdown', 150, 100);
+      pointer(t.board, 'pointermove', 260, 180);
+      pointer(t.board, 'pointerup', 260, 180);
+      const all = t.wb.items() as NoteItem[];
+      expect(all).toHaveLength(3);
+      expect(all[0]).toMatchObject({ id: under, x: 200, y: 150, size: 180 }); // neither moved nor resized
+      expect(all[2]).toMatchObject({ kind: 'note', size: 110, on: under });
+    } finally {
+      t.wb.destroy();
+      t.room.close();
+    }
+  });
+
+  it('is put on nothing when made on an empty spot', async () => {
+    const t = await mount();
+    try {
+      t.wb.setTool('note');
+      pointer(t.board, 'pointerdown', 200, 150);
+      pointer(t.board, 'pointerup', 200, 150);
+      expect(t.wb.items()[0]).not.toHaveProperty('on');
+    } finally {
+      t.wb.destroy();
+      t.room.close();
+    }
+  });
+
   it('is at least the smallest note when dragged out too small, in any direction', async () => {
     const t = await mount();
     try {

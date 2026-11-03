@@ -462,12 +462,14 @@ export class Whiteboard {
    * Pins a sticky note (paper: a pale version of the current colour) and returns its id; null when
    * read only. Only its author edits, moves, resizes or deletes it; others double click to copy it.
    * With `size` (board units, kept within a note's limits) it has that width and height and is not
-   * turned; `at` is its centre.
+   * turned; `at` is its centre. With `on` it is attached to the element (note, picture or link, the
+   * one on top) under that point, if any, and follows it.
    */
   addNote(
     at?: { x: number; y: number },
     text?: string,
     size?: { width: number; height: number },
+    on?: { x: number; y: number },
   ): string | null;
   /** Pins a bare pin in the current colour; null when read only. */
   addPin(at?: { x: number; y: number }): string | null;
