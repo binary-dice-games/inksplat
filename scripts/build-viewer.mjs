@@ -66,6 +66,9 @@ export async function buildViewer(out) {
       { in: join(src, 'present.ts'), out: 'present' },
       // The still refresh's worker (viewer/src/still-refresh.ts), loaded next to the pages.
       { in: join(src, 'still-refresh-worker.ts'), out: 'still-refresh-worker' },
+      // The Google Meet add-on's pages (spec/08_meet_addon).
+      { in: join(src, 'meet', 'meet-stage.ts'), out: 'meet-stage' },
+      { in: join(src, 'meet', 'side-panel.ts'), out: 'side-panel' },
     ],
     outdir: out,
     bundle: true,
@@ -99,10 +102,42 @@ export async function buildViewer(out) {
     throw new Error('viewer/src/index.html has no <style> block');
   }
   const page = readFileSync(join(src, 'present.html'), 'utf8');
+  const presenterHtml = page.replace('<!--{{style}}-->', () => style);
+  writeFileSync(join(out, 'present.html'), presenterHtml);
+  // The Google Meet add-on: the same pages with Meet's SDK script allowed and the Meet mode
+  // marked, plus the stage router and the side panel. The standalone pages stay free of it.
+  const meta = meetMeta();
+  writeFileSync(join(out, 'meet-host.html'), meetVariant(presenterHtml, meta));
   writeFileSync(
-    join(out, 'present.html'),
-    page.replace('<!--{{style}}-->', () => style),
+    join(out, 'meet-guest.html'),
+    meetVariant(readFileSync(join(out, 'index.html'), 'utf8'), meta),
   );
+  for (const name of ['meet-stage.html', 'side-panel.html']) {
+    writeFileSync(
+      join(out, name),
+      readFileSync(join(src, 'meet', name), 'utf8').replace('<!--{{meet-meta}}-->', () => meta),
+    );
+  }
+}
+
+/** The meta tags of the Meet pages: the mode, and the Google Cloud project number if set. */
+export function meetMeta(project = process.env.INKSPLAT_MEET_PROJECT ?? '') {
+  const tags = ['<meta name="inksplat-meet" content="1" />'];
+  if (/^\d+$/.test(project)) {
+    tags.push(`<meta name="inksplat-meet-project" content="${project}" />`);
+  }
+  return tags.join('\n    ');
+}
+
+/** A page for the Meet add-on: Meet's SDK script allowed by its policy, the mode marked. */
+export function meetVariant(html, meta) {
+  const policy = "script-src 'self';";
+  if (!html.includes(policy) || !html.includes('</head>')) {
+    throw new Error('page has no script policy or head to change');
+  }
+  return html
+    .replace(policy, "script-src 'self' https://www.gstatic.com;")
+    .replace('</head>', () => `    ${meta}\n  </head>`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

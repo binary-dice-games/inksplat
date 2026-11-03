@@ -48,9 +48,9 @@ browser app only), and the reverse flow where a user shares in Meet and the add-
 3. In the main stage everyone has the existing **Share screen** button and the host the Screen
    list (spec 07 section 3). The board background `screen` shows the active stream.
 4. Participants who join the call later and open the add-on join the running session.
-5. The side panel after start shows status only: connection state, participant count, a
-   **Leave** button and, for the host, **End for everyone**. Host controls stay in the main
-   stage page, where they are today.
+5. The side panel after start shows status only (what the main stage reports, a line of text).
+   Host controls, including **End session**, stay in the main stage page, where they are today.
+   *As built:* no Leave button; leaving the call or closing the main stage leaves the session.
 6. If the host closes the main stage or leaves the call, the session ends for everyone: guests
    see "The presenter left. Start inksplat again to continue."
 
@@ -88,9 +88,14 @@ messages (`notifySidePanel` / `notifyMainStage`). If a participant never opens t
 - The token in the starting state is visible to every participant of the activity, which is
   exactly the audience of the call. It is not a URL fragment, so Pages never sees it
   (spec 01 section 4.4 holds). It is never logged.
+- **Who is the starter.** The starting state also carries a random `starter` id. The starter's
+  side panel keeps it in `sessionStorage` (`inksplat.meet.starter`); a main stage whose tab holds
+  the same value is the host, every other is a guest. This assumes the side panel and main stage
+  iframes of one Meet tab share `sessionStorage` (open question 7, plan step 1). The main stage
+  URL is the same for everyone, so the page `meet-stage.html` decides the role and moves on to
+  `meet-host.html` or `meet-guest.html` (section 6).
 - A second `startActivity` in the same meeting joins the running one (Meet allows one
-  activity); if the first host's page is gone the new starter's token wins and the session
-  restarts (section 8).
+  activity). Restarting after the host left is not built (section 8).
 
 ### 4.3 Why a rendezvous and not a new link type
 
@@ -126,18 +131,18 @@ the file header and `NOTICE`. The transport itself is written by the embedder
 
 Same offer/answer exchange as `TorrentRendezvous`, over the broadcast:
 
-- **Guest -> all:** `{kind: 'offer', offerId, from, to?: undefined, sdp}` sealed. Only the host
-  acts on an offer. Sent on start, and repeated every `retryMs` (default 4 s) with a fresh offer
-  until a link opens, because the co-doing channel is not known to deliver to participants who
-  have not subscribed yet (section 9, spike).
-- **Host -> all:** `{kind: 'answer', offerId, to: guestPeerId, sdp}` sealed. Every guest
-  receives it; only the offer's owner (`offerId` it made) applies it. Others drop it after the
-  unseal check.
-- Offers older than a bound, or from known linked peers, are ignored; the same protocol id
-  check as other rendezvous (`inksplat/2`) applies.
-- Large SDP: if the transport reports a size limit (`maxBytes`, optional field), messages are
-  split in sequence-numbered chunks and reassembled. Not built unless the spike shows it is
-  needed (plan step 1).
+- **Guest -> all:** `{k: 'offer', id, s}` where `s` is the sealed offer (protocol, peer id,
+  role, SDP, time). Only the host acts on an offer. Sent on start, and repeated every `retryMs`
+  (default 4 s) with a fresh offer until an answer arrives, because the co-doing channel is not
+  known to deliver to participants who have not subscribed yet (section 9, spike). At most three
+  unanswered offers are kept; after an answer the guest waits 15 s or until its link fails.
+- **Host -> all:** `{k: 'answer', id, s}` with the `id` of the offer. Every guest receives it;
+  only the offer's owner applies it. Others drop it without unsealing.
+- Sealed signals older than five minutes, repeated, of another room or of another protocol id
+  (`inksplat/2`) are ignored, as for the trackers (`fresh`).
+- Large SDP: the transport may declare `maxBytes`; a message over it is not sent and the status
+  `no-channel` says so. Chunking is **not built**; the spike (plan step 1) shows whether it is
+  needed.
 
 ### 5.3 Cost and privacy of the broadcast
 
@@ -151,20 +156,25 @@ no SDP, token or names in clear.
 
 | Piece | Responsibility |
 |---|---|
-| `meet-sdk.ts` | Loads the SDK script on demand, exposes a typed minimal facade: `createAddonSession`, clients, `getActivityStartingState`, `startActivity`, `createCoDoingClient`, `getMeetingInfo`. Throws `MeetError` (stable `reason`) when not inside Meet or the SDK is unavailable. |
-| `meet-transport.ts` | `SignalTransport` over `CoDoingClient`: `broadcastStateUpdate` / `onCoDoingStateChanged`, UTF-8 <-> `Uint8Array`, echo filtering, optional chunking. |
-| `meet-boot.ts` | Decides role (starter vs joiner) and builds the session options; shared by both entry pages. |
-| `main-stage.ts` / `main-stage.html` | Entry page: boot, then the presenter page UI (host) or viewer UI (guest). |
-| `side-panel.ts` / `side-panel.html` | Launcher and status. |
-| `fake-meet.ts` (tests/support) | In-memory Meet SDK for tests (section 11). |
+| `meet-sdk.ts` | Loads the SDK script (`MEET_SDK_URL`) on demand, typed minimal facade of what is used (`createAddonSession`, the two clients, starting state, `startActivity`, `createCoDoingClient`). `MeetError` (stable `reason`) when not inside Meet, the SDK is unavailable, or the build has no project number. `getMeetingInfo` is not used. |
+| `meet-transport.ts` | `SignalTransport` over `CoDoingClient`: `broadcastStateUpdate` / `onCoDoingStateChanged`, UTF-8 <-> `Uint8Array`. No chunking. |
+| `meet-boot.ts` | Starting state (`newStart`, `parseStart`), role (`roleFor`), `planMainStage` (role, token, rendezvous, status report), `startActivity`, `activityRunning`. |
+| `meet-stage.ts` / `.html` | The main stage every participant loads: finds the role and moves on to `meet-host.html` or `meet-guest.html`. |
+| `side-panel.ts` / `.html` | Start button and status line. |
+| `meet-page.ts` | `meetMode()`: whether the page is a Meet variant (a `<meta name="inksplat-meet">`). |
+| `tests/support/fake-meet.ts` | Fake SDK for tests, node and browser (section 11). |
 
-The presenter and viewer apps (`present.ts`, `main.ts`) are refactored so their boot step takes
-**session options and identity from the caller** (today they read the URL fragment and the
-start form). This is the only change to existing pages; the standalone behavior stays.
+`meet-host.html` and `meet-guest.html` are **generated by the build** from `present.html` and
+`index.html` (`scripts/build-viewer.mjs`, `meetVariant`): same bundles (`present.js`,
+`viewer.js`), the CSP allows the SDK script origin, and the meta tags switch Meet mode on and
+carry the Google Cloud project number (`INKSPLAT_MEET_PROJECT`). In Meet mode `present.ts`
+skips the start screen, hides the invite link and "Start again", skips the board backup and
+starts the host with the plan's token and `channel` rendezvous (`ShareHost.start` gained
+`token`); `main.ts` skips the join form and joins with the same. The standalone pages are
+byte-for-byte free of Meet: no meta, no extra script origin (`tests/unit/meet-build.test.ts`).
 
-The SDK is loaded from Google's script URL at runtime in the two Meet pages only; the
-standalone pages keep zero third-party scripts. The Pages CSP gets that one script origin on
-the Meet pages (and `frame-ancestors https://meet.google.com`); see plan step 5.
+`frame-ancestors` cannot be set from a `<meta>` policy and GitHub Pages sends no headers, so the
+pages can be framed by anyone (a limit, not a regression: the standalone pages can too).
 
 ## 7. Screen sharing inside the add-on
 
@@ -213,10 +223,17 @@ each on a real test deployment and this section is updated with the answers befo
 6. Background throttling of the main stage when the user switches Meet tabs (the host relay is
    event driven and timer-free, spec 07 section 7; verify on Meet).
 
+7. Whether the side panel and main stage iframes of one tab share `sessionStorage` (the starter
+   id, section 4.2). If not, the starter must be told another way (for example
+   `notifyMainStage`, or a fixed `starter` in `mainStageUrl`'s query).
+8. Whether `getActivityStartingState()` is synchronous, and what it returns before an activity
+   exists (the code accepts both a value and a promise and treats missing data as "not started").
+
 Open questions (default used unless the user decides otherwise):
 
 1. Name and colour: from Meet if the SDK gives a display name, else a short prompt in the main
-   stage. [prompt prefilled with "Meet participant"]
+   stage. [*As built:* no prompt; the name remembered by the standalone site, else "Meet
+   participant"; a random colour]
 2. May a guest start the activity? [yes, the starter becomes host]
 3. Side panel shows host controls too? [no: v1 status only]
 4. Show a Meet-specific privacy notice before the first Share screen? [yes, same text as the
@@ -258,3 +275,11 @@ guests, a corporate network, side-panel and main-stage states.
 
 Real Meet cannot run in CI; the fake follows the documented API, and plan step 1 records
 where the real SDK differed.
+
+As built: `tests/unit/channel-rendezvous.test.ts`, `meet-transport.test.ts`, `meet-boot.test.ts`,
+`meet-sdk.test.ts`, `meet-build.test.ts`, and `tests/e2e/meet-addon.test.ts` (the built pages in
+Chrome with the fake injected by `page.addInitScript`; starter plus two guests, a late joiner,
+host leaving, outside Meet, nothing started). A guest's stream relayed by a host linked through
+Meet is not repeated there: the relay does not depend on how the link was made
+(`tests/e2e/streams.test.ts`). The fake follows the pages of one browser context, so the starter's
+`sessionStorage` is the real browser's.

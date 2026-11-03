@@ -6,6 +6,7 @@
  * the streams on offer. The whiteboard is mounted on the host session.
  */
 import { SessionError } from '@inksplat/collab-session';
+import type { RendezvousSpec } from '@inksplat/collab-session';
 import {
   LIMITS,
   createWhiteboard,
@@ -38,6 +39,9 @@ import type { SaveHost } from './save';
 import { BackupWriter, backupInfo, openBackupStore } from './backup';
 import type { BackupInfo, BackupStore } from './backup';
 import { cleanPrefs, loadPrefs, savePrefs } from './present-settings';
+import { meetMode } from './meet/meet-page';
+import { planMainStage } from './meet/meet-boot';
+import { meetProblem } from './meet/meet-sdk';
 import type { PresenterPrefs } from './present-settings';
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
@@ -311,7 +315,7 @@ function endSession(message: string): void {
 // ── Starting ─────────────────────────────────────────────────────────────────
 
 /** Starts the session: a board, on which anybody can share a screen at any time. */
-async function startSession(): Promise<void> {
+async function startSession(via?: { token: string; rendezvous: RendezvousSpec[] }): Promise<void> {
   if (host) {
     return;
   }
@@ -329,14 +333,46 @@ async function startSession(): Promise<void> {
       settings,
       clearBoard: () => board?.clear(),
       clearDrawings: () => board?.clearDrawings(),
+      ...(via ?? {}),
     });
   } catch (e) {
     problem.textContent = errorMessage(e instanceof SessionError ? e.reason : undefined);
     problem.hidden = false;
+    if (via) {
+      endSession(problem.textContent);
+    }
     return;
   }
   enterApp();
-  void startBackup();
+  // In a Meet call the board is not kept for a later session: a new call starts a new one.
+  if (!via) {
+    void startBackup();
+  }
+}
+
+/**
+ * Meet add-on: this tab started the activity, so it hosts. The room comes from the starting
+ * state and the peers find each other over Meet (spec/08_meet_addon/DESIGN.md section 3).
+ */
+async function startMeetHost(): Promise<void> {
+  // The invite link, codes and a "start again" make no sense in a call.
+  for (const id of ['inviteTitle', 'again']) {
+    const el = $(id);
+    (el.closest('section') ?? el).hidden = true;
+  }
+  show('over');
+  $('overText').textContent = 'Connecting to the call…';
+  try {
+    const plan = await planMainStage();
+    if (plan.role !== 'host') {
+      $('overText').textContent = 'inksplat was started by someone else in this call.';
+      return;
+    }
+    await startSession({ token: plan.token, rendezvous: plan.rendezvous });
+    plan.report('You are the presenter.');
+  } catch (e) {
+    $('overText').textContent = meetProblem(e);
+  }
 }
 
 // ── Backup ───────────────────────────────────────────────────────────────────
@@ -528,7 +564,6 @@ function main(): void {
       adapter?.update();
     });
   }
-  show('start');
   share = wireShareButton({
     button: $<HTMLButtonElement>('share'),
     notice: $<HTMLDialogElement>('shareNotice'),
@@ -711,6 +746,11 @@ function main(): void {
       say(e instanceof Error ? e.message : 'That code did not work.');
     }
   });
+  if (meetMode()) {
+    void startMeetHost();
+  } else {
+    show('start');
+  }
   backupStore = openBackupStore();
   // Closing or reloading the page ends the session: the browser asks first.
   window.addEventListener('beforeunload', (e) => {

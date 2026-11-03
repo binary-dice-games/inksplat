@@ -1,0 +1,56 @@
+<!doctype html>
+<!-- MIT License © 2026 Binary Dice Games -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self' https://www.gstatic.com; style-src 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
+    />
+    <!--{{meet-meta}}-->
+    <title>inksplat in Google Meet</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font:
+          14px/1.45 system-ui,
+          sans-serif;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+      }
+      h1 {
+        font-size: 18px;
+        margin: 0 0 8px;
+      }
+      button {
+        font: inherit;
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: 0;
+        background: #0b7a67;
+        color: #fff;
+        cursor: pointer;
+      }
+      button[disabled] {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .muted {
+        opacity: 0.75;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>inksplat</h1>
+    <p id="intro">
+      Share a tab, window or screen and draw on it together. Everything you share can be shown to
+      everyone in this call.
+    </p>
+    <p><button id="start" type="button" hidden>Start inksplat for everyone</button></p>
+    <p id="status" class="muted" role="status"></p>
+    <script src="side-panel.js"></script>
+  </body>
+</html>

@@ -63,6 +63,7 @@ Needs Node.js 20+; the browser tests need Chrome. See
 | [docs/building.md](docs/building.md) | Prerequisites, build, check and test |
 | [docs/testing.md](docs/testing.md) | Running the tests, how the browser tests work, trying the presenter page by hand |
 | [docs/manual-testing.md](docs/manual-testing.md) | Checklist for real networks and the real picker |
+| [docs/meet-addon.md](docs/meet-addon.md) | inksplat as a Google Meet add-on: use, pages, setting up a deployment |
 | [docs/publishing.md](docs/publishing.md) | Publishing the Pages site |
 | [docs/privacy.md](docs/privacy.md) | Where the privacy policy lives, in short |
 | [spec/INDEX.md](spec/INDEX.md) | Index of the project specifications |

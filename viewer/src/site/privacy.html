@@ -72,6 +72,14 @@
           encrypted with a key that only people with the link have.
         </li>
         <li>
+          <strong>Google Meet.</strong> When inksplat runs as a Google Meet add-on, the
+          introductions go through Meet instead of the trackers. Google sees that messages pass
+          between the participants of the call, but not their contents: they are encrypted with a
+          key made from the session's secret, which Meet stores in the activity's starting data
+          for the call. Video and drawings still go directly between the participants, not through
+          Google. Google's own privacy policy applies to Meet.
+        </li>
+        <li>
           <strong>STUN servers.</strong> To find a connection path, the browser asks public STUN
           servers (by default Google's and Cloudflare's), which see your network address. If the
           presenter configures a TURN server, traffic that cannot go directly passes through it,

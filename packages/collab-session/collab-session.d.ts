@@ -67,6 +67,19 @@ export interface UplinkParams {
   contentHint?: 'detail' | 'text' | 'motion' | '';
 }
 
+/**
+ * A broadcast to everyone else in a call, as the carrier of the `channel` rendezvous. It may
+ * lose messages sent before another participant listens; the rendezvous repeats offers.
+ */
+export interface SignalTransport {
+  /** Sends one text message to every other participant. Rejects when it cannot. */
+  send(text: string): Promise<void>;
+  /** Listens for messages from others (an echo of own messages is harmless). Returns unsubscribe. */
+  subscribe(listener: (text: string) => void): () => void;
+  /** The largest message in characters, when the carrier has a limit. */
+  maxBytes?: number;
+}
+
 export type RendezvousSpec =
   | {
       kind: 'torrent';
@@ -79,6 +92,7 @@ export type RendezvousSpec =
     }
   | { kind: 'manual'; gatherMs?: number }
   | { kind: 'broadcast' }
+  | { kind: 'channel'; transport: SignalTransport; gatherMs?: number; retryMs?: number }
   | { kind: 'memory'; network: MemoryNetwork }
   | { start(ctx: unknown): void; stop(): void; retry?(): void };
 

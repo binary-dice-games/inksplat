@@ -89,6 +89,19 @@ presenter on Chrome.
 | 75 | The viewer whose stream is on the screen closes its tab, or is removed | The screen goes black for everybody at once; the stream leaves the presenter's list |
 | 76 | With the pointer, drag from an empty place over two stickers, a line and a note; drag one; pick a colour in the bar; Ctrl+C, move, Ctrl+V; Delete | All four are outlined and the bar says "4 selected"; all move together; the line and note change colour; the copies appear at the pointer, selected, on the viewer too; Delete removes them |
 
+## Google Meet add-on (spec/08_meet_addon)
+
+| # | Do | Expect |
+|---|----|--------|
+| 77 | On a test deployment, three browsers in one call: open **Activities**, pick inksplat in the first, press **Start inksplat for everyone**; the others accept | The first gets the presenter page without an invite link; the others get the viewer page and appear in People; no tracker is contacted (network tab) |
+| 78 | The presenter and a viewer press **Share screen** and pick a tab each (check `getDisplayMedia` is allowed in the add-on frame) | The picker opens; the presenter lists the viewer's stream under **Screen** and can show it to the third participant |
+| 79 | A fourth person opens the add-on 5 minutes later | They join the running session within about 10 seconds |
+| 80 | The presenter closes the main stage or leaves the call | Viewers read "Session over" |
+| 81 | Switch away from the Meet tab for a minute while a viewer's stream is on screen | The video still flows; note any freeze |
+| 82 | Join from Firefox or Safari, and from a corporate network | Joins as on the standalone site, or the status says which step failed |
+| 83 | Open `meet-stage.html` outside Meet | It asks to open inksplat from a call |
+| 84 | In the browser console during 77, read the log | One `channel:` line per offer and answer; record the largest offer size and any co-doing rate error |
+
 ## Known untested areas (from nymph)
 
 Public trackers over time, real NATs, Firefox, Safari, phones and TURN: these

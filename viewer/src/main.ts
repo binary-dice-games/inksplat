@@ -7,7 +7,7 @@
  * presenter page.
  */
 import { createSession, SessionError } from '@inksplat/collab-session';
-import type { Session } from '@inksplat/collab-session';
+import type { RendezvousSpec, Session } from '@inksplat/collab-session';
 import {
   LIMITS,
   cleanImageData,
@@ -29,6 +29,9 @@ import {
 import type { Stage } from '@inksplat/defaults';
 import { setToolbarFolded } from './fold';
 import { filePreview } from './previews';
+import { meetMode } from './meet/meet-page';
+import { planMainStage } from './meet/meet-boot';
+import { meetProblem } from './meet/meet-sdk';
 import { showSheet } from './sheet';
 import { wireSave } from './save';
 import { layerWhileMoving } from './zoom-layer';
@@ -217,8 +220,13 @@ function endSession(message: string): void {
 
 // ── Joining ──────────────────────────────────────────────────────────────────
 
-async function join(name: string, color: string): Promise<void> {
-  if (!invite) {
+async function join(
+  name: string,
+  color: string,
+  via?: { token: string; rendezvous: RendezvousSpec[] },
+): Promise<void> {
+  const token = via?.token ?? invite?.token;
+  if (!token) {
     return;
   }
   show('wait');
@@ -227,14 +235,14 @@ async function join(name: string, color: string): Promise<void> {
   try {
     session = await createSession({
       role: 'guest',
-      token: invite.token,
+      token,
       protocol: PROTOCOL,
       videoCodecs: [...CODEC_PREFERENCE],
       log: logger,
       me: { name, color },
       iceServers: [...DEFAULT_ICE_SERVERS],
-      rendezvous: [
-        { kind: 'torrent', urls: invite.trackers ?? [...DEFAULT_TRACKERS] },
+      rendezvous: via?.rendezvous ?? [
+        { kind: 'torrent', urls: invite?.trackers ?? [...DEFAULT_TRACKERS] },
         { kind: 'manual' },
       ],
     });
@@ -397,6 +405,11 @@ async function main(): Promise<void> {
     list.hidden = !list.hidden;
     $('people').setAttribute('aria-expanded', String(!list.hidden));
   });
+  if (meetMode()) {
+    void joinFromMeet();
+    return;
+  }
+
   if (!invite) {
     wireAbout();
     show('landing');
@@ -448,6 +461,34 @@ async function main(): Promise<void> {
     void join(name, colorInput.value);
   });
   nameInput.focus();
+}
+
+/**
+ * Meet add-on: no join form. The room and the way to find the presenter come from the call
+ * (spec/08_meet_addon/DESIGN.md section 3); the name is the one remembered here, if any.
+ */
+async function joinFromMeet(): Promise<void> {
+  show('wait');
+  $('waitTitle').textContent = 'Connecting…';
+  $('waitText').textContent = 'Looking for the presenter in this call…';
+  try {
+    const plan = await planMainStage();
+    if (plan.role === 'host') {
+      $('waitTitle').textContent = 'Cannot join';
+      $('waitText').textContent = 'You started inksplat: use the presenter page.';
+      return;
+    }
+    const palette = ['#e5484d', '#f5a524', '#30a46c', '#0f9f86', '#3e63dd', '#8e4ec6'];
+    const color =
+      store('inksplat.color') ?? palette[Math.floor(Math.random() * palette.length)] ?? '#3e63dd';
+    await join(store('inksplat.name') ?? 'Meet participant', color, {
+      token: plan.token,
+      rendezvous: plan.rendezvous,
+    });
+  } catch (e) {
+    $('waitTitle').textContent = 'Cannot join';
+    $('waitText').textContent = meetProblem(e);
+  }
 }
 
 void main();

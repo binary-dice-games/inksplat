@@ -102,6 +102,8 @@ export interface ShareHostOptions {
   settings: Settings;
   /** Replaces the trackers in `settings` (tests use the memory network). */
   rendezvous?: RendezvousSpec[];
+  /** The room token to host (the Meet add-on shares it in the activity); default: a new one. */
+  token?: string;
   /** Clears the whiteboard for everyone; the owner's whiteboard does it. */
   clearBoard?: () => void;
   clearDrawings?: () => void;
@@ -173,6 +175,7 @@ export class ShareHost {
     const session = await createSession({
       role: 'host',
       protocol: PROTOCOL,
+      ...(options.token ? { token: options.token } : {}),
       log: (...args: unknown[]) => console.log('[inksplat]', ...args),
       me: { name: settings.name, color: settings.color },
       iceServers: settings.iceServers,

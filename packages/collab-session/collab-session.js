@@ -12,7 +12,9 @@
  * `up`/`key` control messages (spec/07_participant_streaming/DESIGN.md sections 4 and 6), and
  * the forwarded codec chosen per link (`forwardCodecs`, `sdpCodecs`; a viewer on another codec
  * gets the source re-encoded); a guest announces only the video of the link it keeps (`adopt`);
- * the host's own stream is encoded once for all viewers (`SharedEncoder`, `encoderInfo`).
+ * the host's own stream is encoded once for all viewers (`SharedEncoder`, `encoderInfo`), and
+ * the `channel` rendezvous over an embedder's broadcast (`ChannelRendezvous`, for the Meet add-on;
+ * spec/08_meet_addon/DESIGN.md section 5).
  * It imports nothing.
  *
  *   import { createSession } from './collab-session.js';
@@ -1942,6 +1944,174 @@ class BroadcastRendezvous {
 }
 
 /**
+ * Peers find each other over a broadcast the embedder provides (inksplat addition, for the
+ * Google Meet add-on: spec/08_meet_addon/DESIGN.md section 5). `transport.send(text)` reaches every
+ * other participant, `transport.subscribe(listener)` hears them. Messages are
+ * `{k: 'offer'|'answer', id, s}` with `s` sealed for the room, so the carrier learns nothing. The
+ * carrier may drop messages sent before the other side listens, so a guest makes a new offer
+ * every `retryMs` until a link is being opened.
+ */
+class ChannelRendezvous {
+  constructor(spec) {
+    if (typeof spec.transport?.send !== 'function' || typeof spec.transport?.subscribe !== 'function') {
+      throw new SessionError('config', 'a channel rendezvous needs a transport with send and subscribe');
+    }
+    this.transport = spec.transport;
+    this.gatherMs = spec.gatherMs ?? 3000;
+    this.retryMs = spec.retryMs ?? 4000;
+    this.pending = new Map(); // offer id -> {link, pc}
+    this.seen = new Set();
+    this.tryingUntil = 0;
+  }
+
+  start(ctx) {
+    this.ctx = ctx;
+    this.stopped = false;
+    this.unsubscribe = this.transport.subscribe((text) => this.received(text));
+    if (ctx.role === 'guest') {
+      this.offer();
+      this.timer = setInterval(() => this.offer(), this.retryMs);
+    }
+  }
+
+  stop() {
+    this.stopped = true;
+    clearInterval(this.timer);
+    this.unsubscribe?.();
+    for (const p of this.pending.values()) {
+      p.link.close();
+    }
+    this.pending.clear();
+  }
+
+  /** The presenter went away: look for it again at once. */
+  retry() {
+    this.tryingUntil = 0;
+    this.offer();
+  }
+
+  /** @private */
+  async send(message) {
+    const text = JSON.stringify(message);
+    const max = this.transport.maxBytes;
+    if (max && text.length > max) {
+      this.ctx.status('no-channel', 'The call channel cannot carry the connection message: it is too large.');
+      return false;
+    }
+    try {
+      await this.transport.send(text);
+      return true;
+    } catch (e) {
+      dbg('channel: send failed:', e?.message ?? e);
+      this.ctx.status('no-channel', 'The call channel could not be reached.');
+      return false;
+    }
+  }
+
+  /** @private A guest offers, unless a link is being opened. */
+  async offer() {
+    if (this.stopped || !this.ctx.wantsLinks() || Date.now() < this.tryingUntil) {
+      return;
+    }
+    let made;
+    try {
+      made = await makeOffer(this.ctx.iceServers, this.gatherMs, this.ctx.media);
+    } catch (e) {
+      dbg('could not make an offer:', e?.message ?? e);
+      return;
+    }
+    const id = randomId(12);
+    if (this.stopped) {
+      made.link.close();
+      return;
+    }
+    // Offers nobody answered stay for a while; the oldest go when there are more than three.
+    this.pending.set(id, { link: made.link, pc: made.pc });
+    for (const [old, p] of this.pending) {
+      if (this.pending.size <= 3) {
+        break;
+      }
+      p.link.close();
+      this.pending.delete(old);
+    }
+    const sealed = await sealMessage(this.ctx.keys, { p: this.ctx.protocol, from: this.ctx.peerId, role: 'guest', kind: 'offer', sdp: made.sdp, ts: Date.now() });
+    dbg('channel: offer sent', short(id));
+    await this.send({ k: 'offer', id, s: sealed });
+  }
+
+  /** @private */
+  async received(text) {
+    let m;
+    try {
+      m = JSON.parse(text);
+    } catch {
+      return;
+    }
+    if (this.stopped || !m || typeof m.id !== 'string' || typeof m.s !== 'string' || m.id.length > 64) {
+      return;
+    }
+    if (m.k === 'offer' && this.ctx.role === 'host') {
+      const sealed = await unsealMessage(this.ctx.keys, m.s);
+      if (!this.fresh(sealed, 'offer', 'guest')) {
+        return;
+      }
+      dbg('channel: offer received from', short(sealed.from));
+      this.ctx.status('offer', sealed.from);
+      try {
+        const { link, sdp } = await makeAnswer(this.ctx.iceServers, sealed.sdp, this.gatherMs, this.ctx.media);
+        const answer = await sealMessage(this.ctx.keys, { p: this.ctx.protocol, from: this.ctx.peerId, role: 'host', kind: 'answer', sdp, ts: Date.now() });
+        this.ctx.link(link);
+        dbg('channel: answer sent to', short(sealed.from));
+        await this.send({ k: 'answer', id: m.id, s: answer });
+      } catch (e) {
+        dbg('could not answer an offer:', e?.message ?? e);
+      }
+    } else if (m.k === 'answer' && this.ctx.role === 'guest') {
+      const pending = this.pending.get(m.id);
+      if (!pending) {
+        return; // for another guest, or an offer given up
+      }
+      const sealed = await unsealMessage(this.ctx.keys, m.s);
+      if (!this.fresh(sealed, 'answer', 'host')) {
+        return;
+      }
+      this.pending.delete(m.id);
+      for (const p of this.pending.values()) {
+        p.link.close();
+      }
+      this.pending.clear();
+      this.tryingUntil = Date.now() + 15000;
+      pending.link.closed || pending.link.isOpen || this.watchTry(pending.link);
+      this.ctx.status('answer', sealed.from);
+      try {
+        await pending.pc.setRemoteDescription({ type: 'answer', sdp: sealed.sdp });
+        this.ctx.link(pending.link);
+      } catch (e) {
+        dbg('could not use the answer:', e?.message ?? e);
+        pending.link.close();
+      }
+    }
+  }
+
+  /** @private Offers again as soon as the link being tried fails. */
+  watchTry(link) {
+    const check = setInterval(() => {
+      if (this.stopped || link.closed || link.isOpen) {
+        clearInterval(check);
+        if (link.closed) {
+          this.tryingUntil = 0;
+        }
+      }
+    }, 250);
+  }
+
+  /** @private A sealed signal of this room and protocol, recent and not seen before. */
+  fresh(s, kind, role) {
+    return TorrentRendezvous.prototype.fresh.call(this, s, kind, role);
+  }
+}
+
+/**
  * An in-memory network for tests: sessions with `{kind: 'memory',
  * network}` on the same network and topic find each other at once.
  */
@@ -1998,6 +2168,8 @@ function makeRendezvous(spec) {
       return new ManualRendezvous(spec);
     case 'broadcast':
       return new BroadcastRendezvous();
+    case 'channel':
+      return new ChannelRendezvous(spec);
     case 'memory':
       return spec.network.rendezvous();
     default:
