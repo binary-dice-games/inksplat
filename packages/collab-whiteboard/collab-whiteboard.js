@@ -63,6 +63,8 @@ export const LIMITS = Object.freeze({
 export class WhiteboardError extends Error {}
 
 const ID = /^[A-Za-z0-9_.-]{1,64}$/;
+/** The most items whose looks a drag message names. */
+const DRAG_IDS = 60;
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 const STICKER = /^[a-z0-9-]{1,32}$/;
 const KINDS = new Set(['ink', 'text', 'sticker', 'image', 'link', 'note', 'pin', 'arrow']);
@@ -1642,6 +1644,10 @@ export class Whiteboard {
     this.cleanups = [];
     this.lastCursorSent = 0;
     this.lastPoint = null;
+    this.lastDragSent = 0;
+    this.dragGesture = null; // {g, seq}: the drag here whose looks are being sent
+    this.remoteDrags = new Map(); // `${peer}:${g}` -> {seq, mode, ids, set, timer}: what peers are moving, turning or scaling now
+    this.endedDrags = new Set(); // keys of drags over, so a late message of one is ignored
     this.inkSeq = 0;
     this.trails = new Map(); // `${peer}:${id}` -> laser trail {node, pts: [{x, y, t}], seq, color}
     this.emotes = new Map(); // emote id -> {name, x, y, level, born, rise, node}
@@ -2467,6 +2473,9 @@ export class Whiteboard {
     for (const c of this.cursors.values()) {
       clearTimeout(c.timer);
     }
+    for (const d of this.remoteDrags.values()) {
+      clearTimeout(d.timer);
+    }
     clearTimeout(this.hintTimer);
     this.clearFx();
     this.dropMotion(true);
@@ -2547,6 +2556,8 @@ export class Whiteboard {
       this.remoteInk(from, m);
     } else if (m.t === 'laser') {
       this.remoteLaser(from, m);
+    } else if (m.t === 'drag') {
+      this.remoteDrag(from, m);
     } else if (m.t === 'ping') {
       this.remotePing(from, m);
     } else if (m.t === 'emote') {
@@ -2608,6 +2619,11 @@ export class Whiteboard {
       if (!here.has(key.split(':')[0])) {
         ink.node.remove();
         this.liveInk.delete(key);
+      }
+    }
+    for (const key of [...this.remoteDrags.keys()]) {
+      if (!here.has(key.split(':')[0])) {
+        this.endRemoteDrag(key);
       }
     }
     for (const [id, c] of this.cursors) {
@@ -3792,6 +3808,98 @@ export class Whiteboard {
     ink.node.setAttribute('d', inkPath(ink.points));
     clearTimeout(ink.timer);
     ink.timer = setTimeout(() => this.dropLive(from, m.id), 10000);
+  }
+
+  /**
+   * @private How a peer's items look while they are moved, turned or scaled (lossy; validated, since
+   * peers send it): drawn as the gesture goes, and as the board is again when it ends, or when
+   * nothing more comes for a while. Nothing is stored: the change itself arrives as operations.
+   */
+  remoteDrag(from, m) {
+    if (typeof m.g !== 'string' || !ID.test(m.g)) {
+      return;
+    }
+    const key = `${from}:${m.g}`;
+    if (m.end === true) {
+      this.endRemoteDrag(key);
+      return;
+    }
+    if (!Number.isInteger(m.seq) || (m.pg ?? 0) !== this.page || this.endedDrags.has(key) || !Array.isArray(m.ids) || m.ids.length < 1 || m.ids.length > DRAG_IDS || !m.ids.every((id) => ID.test(id ?? ''))) {
+      return;
+    }
+    const known = this.remoteDrags.get(key);
+    if (known ? m.seq <= known.seq : this.remoteDrags.size >= 20) {
+      return; // late or out of order, or too many at once
+    }
+    const items = m.ids.map((id) => this.model.get(id)).filter((i) => i && !i.deleted);
+    if (items.length === 0) {
+      return;
+    }
+    let fields = null;
+    if (m.f !== undefined) {
+      fields = this.dragFields(m.f);
+      if (!fields || m.ids.length !== 1) {
+        return;
+      }
+    } else if (!finite(m.dx, -1e5, 1e5) || !finite(m.dy, -1e5, 1e5)) {
+      return;
+    }
+    const mode = fields ? 'fields' : 'move';
+    if (known && (known.mode !== mode || known.ids.join() !== m.ids.join())) {
+      this.restoreDrag(known); // another way of changing, or other items: back to the board first
+    }
+    const state = { seq: m.seq, mode, ids: m.ids.slice(), set: null, timer: known?.timer };
+    this.remoteDrags.set(key, state);
+    if (fields) {
+      this.showPreview(items[0], fields);
+      this.followThreads({ ...items[0], ...fields });
+    } else {
+      state.set = known?.mode === 'move' && known.ids.join() === state.ids.join() ? known.set : this.moveSet(items);
+      this.showGroupAt(m.dx, m.dy, state.set);
+    }
+    clearTimeout(state.timer);
+    state.timer = setTimeout(() => this.endRemoteDrag(key), 3000);
+  }
+
+  /** @private The fields of a peer's drag message that are fine, or null when there are none or any is not. */
+  dragFields(f) {
+    const ranges = { x: [-1e5, 1e5], y: [-1e5, 1e5], size: [4, 2000], ratio: [0.05, 20], rot: [-3600, 3600], lx: [-2000, 2000], ly: [-2000, 2000] };
+    if (!f || typeof f !== 'object') {
+      return null;
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(f)) {
+      if (!ranges[k] || !finite(v, ...ranges[k])) {
+        return null;
+      }
+      out[k] = v;
+    }
+    return Object.keys(out).length > 0 ? out : null;
+  }
+
+  /** @private Draws everything a peer's drag changed as the board is (the nodes are made again). */
+  restoreDrag(state) {
+    if (state.set) {
+      this.showGroupAt(0, 0, state.set);
+    }
+    for (const entry of this.nodes.values()) {
+      entry.sig = null;
+    }
+    this.render();
+  }
+
+  /** @private A peer's drag is over: the board is drawn as it is. */
+  endRemoteDrag(key) {
+    const state = this.remoteDrags.get(key);
+    if (state) {
+      clearTimeout(state.timer);
+      this.remoteDrags.delete(key);
+      this.restoreDrag(state);
+    }
+    this.endedDrags.add(key);
+    if (this.endedDrags.size > 100) {
+      this.endedDrags.delete(this.endedDrags.values().next().value);
+    }
   }
 
   /** @private */
@@ -5137,6 +5245,7 @@ export class Whiteboard {
       d.preview = true;
       this.showPreview(it, d.fields);
       this.followThreads({ ...it, ...d.fields });
+      this.sendDrag({ ids: [it.id], f: d.fields });
       return;
     }
     const flat = it.kind === 'sticker' || it.kind === 'image' || it.kind === 'link' || it.kind === 'note';
@@ -5159,6 +5268,7 @@ export class Whiteboard {
       d.preview = true;
       this.showPreview(it, fields);
       this.followThreads({ ...it, ...fields });
+      this.sendDrag({ ids: [it.id], f: fields });
     } else {
       if (d.preview) {
         d.preview = false;
@@ -5170,6 +5280,31 @@ export class Whiteboard {
       this.showPinDrag(d, dx, dy, p);
       this.nodes.get(it.id)?.node.setAttribute('transform', `translate(${dx} ${dy})`);
       this.followThreads(it.kind === 'ink' ? it : { ...it, x: it.x + dx, y: it.y + dy, ...(it.kind === 'pin' ? { on: undefined } : {}) });
+      this.sendDrag({ ids: [it.id], dx: round1(dx), dy: round1(dy) });
+    }
+  }
+
+  /**
+   * @private Tells the others, as the cursor is, how items being moved, turned or scaled look now
+   * (at most 30 a second, lossy; the change itself follows when it is let go). `part` is `ids` with
+   * either `dx`, `dy` (all moved by that) or `f` (fields of the one item: x, y, size, ratio, rot, lx, ly).
+   */
+  sendDrag(part) {
+    const now = performance.now();
+    if (now - this.lastDragSent < 33) {
+      return;
+    }
+    this.lastDragSent = now;
+    this.dragGesture ??= { g: `d${++this.fxSeq}`, seq: 0 };
+    this.send({ t: 'drag', g: this.dragGesture.g, seq: this.dragGesture.seq++, pg: this.page, ...part, ids: part.ids.slice(0, DRAG_IDS) }, { fast: true });
+  }
+
+  /** @private The gesture whose looks were sent is over: the others show the board as it is (reliably, after the change). */
+  endDragSend() {
+    if (this.dragGesture) {
+      this.send({ t: 'drag', g: this.dragGesture.g, end: true });
+      this.dragGesture = null;
+      this.lastDragSent = 0;
     }
   }
 
@@ -5232,8 +5367,17 @@ export class Whiteboard {
     this.send({ t: 'ink', id: d.id, seq: d.seq++, pts, color: this.style.color, width: this.style.width, pg: this.page }, { fast: true });
   }
 
-  /** @private */
+  /** @private A press let go (or cancelled); then the others are told a drag is over, after its changes. */
   up(ev, cancelled = false) {
+    try {
+      this.release(ev, cancelled);
+    } finally {
+      this.endDragSend();
+    }
+  }
+
+  /** @private */
+  release(ev, cancelled) {
     if (this.labelDrag) {
       this.labelUp(cancelled);
     } else if (this.lasing) {
@@ -5519,6 +5663,7 @@ export class Whiteboard {
     const p = this.eventPoint(ev);
     d.to = { x: round1(d.dx + p.x - d.from.x), y: round1(d.dy + p.y - d.from.y) };
     this.placeLabel(d.id, d.to);
+    this.sendDrag({ ids: [d.id], f: { lx: d.to.x, ly: d.to.y } });
   }
 
   /** @private Puts the drawn label of the pin `id` at `off` from its pin. */
@@ -5664,7 +5809,18 @@ export class Whiteboard {
       return false;
     };
     const roots = [...movable.values()].filter((i) => !carried(i));
-    // What is drawn moving: the items, what sits on them, and the pins on any of those.
+    const { shown, threads } = this.moveSet(roots);
+    this.groupDrag = { id: ev.pointerId, from: p, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, moved: false, roots: roots.map((i) => i.id), shown, threads, pressed: null };
+    ev.preventDefault();
+    this.popover.hidden = true;
+    this.board.setPointerCapture?.(ev.pointerId);
+  }
+
+  /**
+   * @private What is drawn moving when the items `roots` are moved: the items, what sits on them, and
+   * the pins on any of those (`shown`, ids), and the threads tied to any of them (`threads`, ids).
+   */
+  moveSet(roots) {
     const live = this.model.live();
     const shown = new Set(roots.map((i) => i.id));
     for (const r of roots) {
@@ -5679,11 +5835,8 @@ export class Whiteboard {
         shown.add(i.id);
       }
     }
-    const threads = live.filter((i) => i.kind === 'arrow' && (shown.has(i.from) || shown.has(i.to)));
-    this.groupDrag = { id: ev.pointerId, from: p, x0: ev.clientX, y0: ev.clientY, dx: 0, dy: 0, moved: false, roots: roots.map((i) => i.id), shown, threads: threads.map((i) => i.id), pressed: null };
-    ev.preventDefault();
-    this.popover.hidden = true;
-    this.board.setPointerCapture?.(ev.pointerId);
+    const threads = live.filter((i) => i.kind === 'arrow' && (shown.has(i.from) || shown.has(i.to))).map((i) => i.id);
+    return { shown, threads };
   }
 
   /** @private How an item of the selection being moved is drawn for now, `dx`, `dy` away. */
@@ -5712,11 +5865,11 @@ export class Whiteboard {
     }
     g.moved = true;
     this.showGroupAt(g.dx, g.dy);
+    this.sendDrag({ ids: g.roots, dx: round1(g.dx), dy: round1(g.dy) });
   }
 
-  /** @private Draws the selection being moved `dx`, `dy` away from where it is (0, 0: where it is). */
-  showGroupAt(dx, dy) {
-    const g = this.groupDrag;
+  /** @private Draws the selection being moved `dx`, `dy` away from where it is (0, 0: where it is). `g` is the set moved (the selection's drag, or a peer's). */
+  showGroupAt(dx, dy, g = this.groupDrag) {
     for (const id of g.shown) {
       const node = this.nodes.get(id)?.node;
       if (dx || dy) {
