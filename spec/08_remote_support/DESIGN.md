@@ -153,11 +153,13 @@ Key decisions (the *why*):
   `MessagePort` from the session window. The board already draws remote cursors, laser trails,
   pings and emotes in board units; the overlay only maps the frame to the whole display. No
   second renderer for laser or emotes is written, and they look the same as on the board.
-- **The overlay is excluded from capture.** Otherwise the helper would see every laser twice
-  (once on their board, once a moment later in the video) and the coloured border. The overlay
-  and the bar use `BrowserWindow.setContentProtection(true)` (Windows: display affinity
-  *exclude from capture*, Windows 10 2004+; macOS: `sharingType = none`). Linux has no such
-  flag: there the helper sees the echo (section 8, risk 1).
+- **Each mark is shown once to the helper: drawn on their board, or seen in the video.** The
+  overlay asks to be left out of the capture (`BrowserWindow.setContentProtection(true)`:
+  Windows display affinity *exclude from capture*, Windows 10 2004+; macOS
+  `sharingType = none`). Where that works, the helper's board draws the marks itself, at once.
+  Where it does not (Linux, possibly macOS 15+), the overlay's marks are in the video, and the
+  helper's board stops drawing them, so the helper sees them once, a little late, instead of
+  twice. Section 4.2.
 - **The overlay never takes input.** `setIgnoreMouseEvents(true)` (no forwarding),
   `focusable: false`, `skipTaskbar`, always on top at the `screen-saver` level, one per shared
   display, sized to the display's bounds (not its work area: the taskbar is shared too). The
@@ -189,6 +191,37 @@ Key decisions (the *why*):
 - Electron fuses: `RunAsNode` off, `EnableNodeCliInspectArguments` off,
   `EnableEmbeddedAsarIntegrityValidation` on, `OnlyLoadAppFromAsar` on.
 
+### 4.2 Where the helper sees the marks
+
+The marks are the helper's cursor arrow, laser trails, pings and emotes (all transient, `wb`
+messages never stored). The person helped always sees them on the overlay. The helper sees
+them in one of two ways, the **marks mode**:
+
+| Mode | When | Helper's board | Helper sees |
+|---|---|---|---|
+| `local` | The overlay is left out of the capture | Draws laser, pings and emotes as today | Marks at once; video without them |
+| `video` | The overlay is in the capture | Does not draw them (still sends them) | Marks in the video, one video delay late (about 100-300 ms plus a frame) |
+
+The helper's own mouse pointer is the instant feedback in both modes. The coloured border is
+in the video in `video` mode; it sits on the edge and is harmless.
+
+**Deciding the mode: the app checks, it does not guess.** After **Allow** and each time the
+overlay is recreated (display change), the overlay draws a small test pattern (a few pixels of
+distinct colours in a corner, for at most 500 ms) and the session renderer reads frames of its
+own captured track (a `<video>` drawn into a canvas, `getImageData` of that corner). Pattern
+found: `video`; not found within the time: `local`. Until the check ends the mode is `video`
+(the safe side: at worst the helper misses marks for half a second, never sees them twice). The
+app tells the host in the `screen` offer (5.2). Where the check cannot run, the app uses a
+table: Linux `video`, Windows 10 2004+ `local`, macOS from the spike's result (plan step 1).
+
+**What the helper's board needs.** The whiteboard (a nymph copy) gets an option to send marks
+without drawing them: `localMarks?: boolean` (default true) and `setLocalMarks(on)`, recorded
+in the file's header as an inksplat change. Remote marks and everything stored are unaffected.
+
+**Frame rate.** In `video` mode the laser trail is only as smooth as the video, so the host
+raises the guest's frame rate to at least 10 fps (within the settings' limits) while marks are
+on screen, and back to the support default (open question 6) a second after the last one.
+
 ## 5. Protocol
 
 No new channel and no change to the session protocol id. What a support session adds:
@@ -207,7 +240,9 @@ screen; open question 4) and announces itself on the `screen` channel after **Al
 existing `{cmd: 'offer', surface: 'monitor', w, h}` (`spec/07` section 5.1). `w` and `h` are
 the display's size in physical pixels. A new optional field `client: 'support'` lets the host
 show "inksplat Support 1.2.0" in the log and refuse an app older than it supports
-(`cleanScreenMessage` accepts it, version in `v`, a semver string of at most 16 characters).
+(`cleanScreenMessage` accepts it, version in `v`, a semver string of at most 16 characters),
+and `marks: 'local' | 'video'` gives the marks mode (4.2); the app sends the offer again when
+the mode or the display changes. Absent `marks` reads as `video`.
 
 Before **Allow** the app is connected but offers nothing; the host shows *Bob is deciding*
 from the roster (a peer without an offer). **Don't allow** leaves the session.
@@ -226,6 +261,8 @@ from the roster (a peer without an offer). **Don't allow** leaves the session.
   what the whiteboard needs to join. The host's whiteboard is restricted to the pointer tool
   (`tools: ['pointer']`).
 - Canvas: the host stays on canvas 1; canvas commands are not offered.
+- Marks: the host calls `setLocalMarks(marks === 'local')` on its whiteboard on every offer, and
+  raises the guest's frame rate while marks are shown in `video` mode (4.2).
 
 ### 5.4 Reconnecting
 
@@ -243,6 +280,7 @@ shows "The connection was lost" with **Try again** (asks for consent again) and 
 |---|---|---|
 | Stage, `screen` messages | `packages/defaults/src/index.ts` | `Stage.mode`, `client`/`v` in `offer`, `SUPPORT_SCHEME = 'inksplat-support'`, `supportLink(base, fragment, extra)` |
 | `ShareHost` | `viewer/src/share-host.ts` | `mode: 'support'`: one guest, auto-active, aspect from the offer, `wb` from guests dropped |
+| Whiteboard | `packages/collab-whiteboard/collab-whiteboard.js`/`.d.ts` (nymph copy) | `localMarks` option and `setLocalMarks` (4.2); header records the change |
 | Presenter page | `viewer/src/present.ts`/`.html` | **Start a support session**, support status line, restricted toolbar, hidden canvas and stream controls, the text to paste |
 | Landing page | `viewer/src/support.html`, `viewer/src/support.ts` | Open button, downloads per system, steps with pictures |
 | Site build | `scripts/build-site.mjs` | `support.html`, its pictures |
@@ -260,7 +298,8 @@ the site's dependencies), TypeScript built with esbuild like the viewer.
 | Capture | `support-app/src/main/capture.ts` | `setDisplayMediaRequestHandler` gated by consent; macOS permission state (`systemPreferences.getMediaAccessStatus('screen')`) |
 | Overlay windows | `support-app/src/main/overlay.ts` | Create, place, protect from capture, recreate on display change |
 | Session renderer | `support-app/src/session/` | `createSession` (guest), `setUplink`, `screen` offer, stage, reconnect, the whiteboard proxy over a `MessagePort` |
-| Overlay renderer | `support-app/src/overlay/` | Whiteboard read only on a transparent page, border, frame = display |
+| Overlay renderer | `support-app/src/overlay/` | Whiteboard read only on a transparent page, border, frame = display, test pattern for the marks check |
+| Marks check | `support-app/src/session/marks-check.ts` | Finds the test pattern in the captured frames (4.2); the pixel test is a pure function |
 | Control renderer | `support-app/src/control/` | Connecting, consent, macOS permission help, bar, stopped, errors |
 | Preloads | `support-app/src/preload/*.ts` | `support.onState`, `support.allow()`, `support.deny()`, `support.stop()`, `support.nextDisplay()`, `support.openScreenSettings()`; port hand-over |
 | Strings | `support-app/src/strings.ts` | All texts, one table per language |
@@ -310,10 +349,12 @@ change per release.
 Risks (each checked by the spike, plan step 1):
 
 1. **Capture exclusion.** Linux has none, and macOS 15+ with ScreenCaptureKit is reported to
-   ignore `sharingType = none` for some capture paths. Then the helper sees an echo of the
-   laser and the border. Mitigations if it shows: keep the overlay's marks thin and short-lived
-   (they already fade), draw the border only on the bar's display edge, or exclude the app's
-   windows in Chromium's ScreenCaptureKit filter if Electron exposes it.
+   ignore `sharingType = none` for some capture paths. This no longer causes an echo (the
+   `video` marks mode, 4.2) but costs the helper the video's delay on every mark. Risks left:
+   the test pattern is seen by the person for up to 500 ms (kept to a few pixels in a corner),
+   and a capture that drops the overlay only some of the time would make the check wrong (the
+   check runs again on each display change; the helper can also switch the mode by hand in the
+   log panel, open question 7).
 2. **Wayland.** `desktopCapturer` goes through the xdg portal, which always shows the system
    picker, and overlays cannot be placed or kept on top reliably on every compositor. Wayland
    is supported best effort; X11 is the tested Linux path.
@@ -336,4 +377,7 @@ Open questions (default in brackets, used unless decided otherwise):
    editable on the consent screen, remembered]
 5. Languages for the first version. [English and Spanish]
 6. Should the helper's video settings default lower for support (screens are mostly still
-   text)? [yes: content hint `text`, 5 fps, size limit 1920 on the long side]
+   text)? [yes: content hint `text`, 5 fps, size limit 1920 on the long side; 10 fps while
+   marks are shown in `video` mode]
+7. Should the helper have a visible switch for the marks mode? [no: only in the log panel, for
+   when the check gets it wrong]

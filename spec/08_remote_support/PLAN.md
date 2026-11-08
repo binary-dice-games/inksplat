@@ -12,12 +12,13 @@ not) excluded from the capture on Windows, macOS 14, macOS 15+ and Linux X11/Way
 **Deliverables:** `support-app/` workspace skeleton (Electron pinned, esbuild build, one main
 file, one page) kept as the base of step 3; a results note appended here: exclusion per system,
 the source id mapping from `screen.Display` to `desktopCapturer`, the macOS permission and
-relaunch path, Wayland behaviour. If exclusion fails where it matters, update DESIGN section 8
-risk 1 with the chosen mitigation before step 2.
+relaunch path, Wayland behaviour, and whether a test pattern drawn by the overlay can be found
+in the captured frames (DESIGN 4.2) on each system. The results fill the fallback table of
+DESIGN 4.2 before step 2.
 **Tests:** a Playwright `_electron` test (`tests/e2e/support-spike.test.ts`, `PROJECT e2e`,
 Linux under Xvfb in CI): the app starts, captures a display without a picker, and the overlay
-window exists, is transparent and ignores mouse events. Exclusion is checked by hand and
-recorded.
+window exists, is transparent and ignores mouse events; on Linux the test pattern is found in
+the capture. Exclusion on Windows and macOS is checked by hand and recorded.
 **Result:** _pending_
 
 ## 2. Data model and host support mode
@@ -25,10 +26,15 @@ recorded.
 **Goal:** the site side of DESIGN sections 3.1 and 5 without the app (a test guest plays it).
 **Deliverables:** `packages/defaults`: `Stage.mode`, `client`/`v` in the `screen` offer,
 `SUPPORT_SCHEME`, `supportLink`; `ShareHost` `mode: 'support'` (lock after the first guest,
-auto-active offer, aspect from the offer, guest locked to pointer-only, unlock on leave); TSDoc.
+auto-active offer, aspect from the offer, guest locked to pointer-only, unlock on leave,
+marks mode and frame rate (DESIGN 4.2); whiteboard `localMarks`/`setLocalMarks` (header
+records the change)); TSDoc.
 **Tests:** `tests/unit/defaults.test.ts` (stage `mode` cleaning, offer with `client`/`v`,
-`supportLink`); `tests/unit/share-host.test.ts` (support mode: first offer active, aspect,
-second guest refused or removed, guest drawing refused, unlock and rejoin).
+`supportLink`, `marks` in the offer); `tests/unit/share-host.test.ts` (support mode: first
+offer active, aspect, second guest refused or removed, guest drawing refused, unlock and rejoin,
+`setLocalMarks` follows `marks`, frame rate raised while marks show in `video` mode); the
+whiteboard's `localMarks` option and `setLocalMarks` (marks are sent but not drawn locally;
+remote marks still drawn) in `tests/unit/whiteboard-pointer-modes.test.ts`.
 **Result:** _pending_
 
 ## 3. Presenter page support mode and landing page
@@ -66,11 +72,14 @@ reconnects without asking again.
 right place (DESIGN 3.2, 4).
 **Deliverables:** overlay window per shared display (click-through, on top, capture
 protection), session proxy over a `MessagePort`, read-only whiteboard with frame = display,
-border; recreated on **Show my other screen** and on display changes.
+border; recreated on **Show my other screen** and on display changes; the marks check (test
+pattern, frame reading, fallback table) and `marks` in the offer (DESIGN 4.2).
 **Tests:** e2e in `tests/e2e/support-app.test.ts`: the helper's `ping`/laser/emote at a board
 point appears in the overlay's DOM at the matching display position (within 2 px after
 scaling); the overlay ignores mouse events; switching display moves the overlay and changes the
-stage aspect. Unit: frame-to-display mapping with scale factors.
+stage aspect; on Linux the check reports `video` and the helper's board then draws no laser
+of its own. Unit: frame-to-display mapping with scale factors; the pattern test on synthetic
+pixels (found, absent, scaled, compressed colours) in `tests/unit/support-marks-check.test.ts`.
 **Result:** _pending_
 
 ## 6. Packaging, CI and release
@@ -106,6 +115,8 @@ page section for the person helped; CHANGELOG; `spec/INDEX.md` status.
 - Nothing is captured before **Allow**; the border and **Stop** are always visible while it is.
 - The helper's cursor, laser, pings and emotes appear on the person's screen where the helper
   put them, and never take the person's clicks.
+- The helper sees each mark once: drawn at once where the overlay is left out of the capture,
+  only in the video where it is not.
 - Only one person can join a support session; ordinary sessions are unchanged.
 - All tests above pass in CI on Linux, macOS and Windows; the manual checklist is done on the
   three systems.
