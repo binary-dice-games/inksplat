@@ -69,4 +69,4 @@ jobs:
         run: |
           node scripts/build.mjs
           npx electron-builder --config electron-builder.json ${{ matrix.args }} \
-            --publish always -c.publish.0.releaseType=draft ${NOTARIZE:-}
+            --publish always ${NOTARIZE:-}

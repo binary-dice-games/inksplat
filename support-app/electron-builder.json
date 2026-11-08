@@ -32,7 +32,9 @@
     {
       "provider": "github",
       "owner": "binary-dice-games",
-      "repo": "inksplat"
+      "repo": "inksplat",
+      "tagNamePrefix": "support-v",
+      "releaseType": "draft"
     }
   ],
   "win": {

@@ -40,6 +40,18 @@ describe('the installers', () => {
     expect(config.files).toContain('!**/node_modules/**');
   });
 
+  it('publish to a draft release of the support-v<version> tag', () => {
+    expect(config.publish).toEqual([
+      {
+        provider: 'github',
+        owner: 'binary-dice-games',
+        repo: 'inksplat',
+        tagNamePrefix: 'support-v',
+        releaseType: 'draft',
+      },
+    ]);
+  });
+
   it('install per user without admin rights on Windows, and check the publisher of updates', () => {
     expect(config.nsis).toMatchObject({ perMachine: false, allowElevation: false });
     expect(config.win.verifyUpdateCodeSignature).toBe(true);
