@@ -1,0 +1,128 @@
+<!doctype html>
+<!-- MIT License © 2026 Binary Dice Games -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>inksplat Support</title>
+    <style>
+      :root {
+        color-scheme: light;
+        font-family:
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          Roboto,
+          sans-serif;
+        font-size: 18px;
+        line-height: 1.45;
+        color: #1c2024;
+        background: #ffffff;
+      }
+      body {
+        margin: 0;
+        padding: 24px 28px;
+        user-select: none;
+      }
+      h1 {
+        font-size: 26px;
+        line-height: 1.25;
+        margin: 0 0 12px;
+      }
+      p {
+        margin: 0 0 12px;
+      }
+      button {
+        font: inherit;
+        font-size: 18px;
+        padding: 10px 18px;
+        margin: 4px 8px 4px 0;
+        border-radius: 10px;
+        border: 1px solid #b9bbc6;
+        background: #f9f9fb;
+        color: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #0b7a67;
+        border-color: #0b7a67;
+        color: #ffffff;
+      }
+      input {
+        font: inherit;
+        padding: 6px 10px;
+        border: 1px solid #b9bbc6;
+        border-radius: 8px;
+        width: 12em;
+      }
+      .name-row {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin: 12px 0;
+      }
+      .code-box {
+        border: 1px solid #d9d9e0;
+        border-radius: 12px;
+        padding: 10px 16px;
+        margin: 12px 0;
+      }
+      .code {
+        font:
+          600 34px/1.2 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        letter-spacing: 0.08em;
+        margin: 0;
+      }
+      .warning {
+        border-left: 4px solid #e5484d;
+        padding-left: 12px;
+      }
+      .muted,
+      .version {
+        color: #60646c;
+      }
+      .version {
+        font-size: 13px;
+        margin-top: 20px;
+      }
+      .notice {
+        background: #fff7c2;
+        padding: 8px 12px;
+        border-radius: 8px;
+      }
+      /* The bar while sharing: small, but the Stop button large. */
+      body.bar {
+        padding: 10px 14px;
+        border: 3px solid #e5484d;
+        box-sizing: border-box;
+        height: 100vh;
+        overflow: hidden;
+      }
+      .status {
+        font-weight: 600;
+        margin: 0 0 6px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .dot {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #e5484d;
+      }
+      .bar-row button {
+        padding: 6px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main id="root" aria-live="polite"></main>
+    <script src="control.js"></script>
+  </body>
+</html>

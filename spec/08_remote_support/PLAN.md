@@ -89,7 +89,17 @@ e2e `tests/e2e/support-app.test.ts` (Playwright `_electron`, fake tracker, the b
 `present.html` as helper): the app connects, nothing is sent before **Allow**, after **Allow**
 the helper sees the app's screen, **Stop** blacks it, **Don't allow** leaves, a dropped link
 reconnects without asking again.
-**Result:** _pending_
+**Result:** done. As built (DESIGN updated): the consent explains for 3 s, then a native
+dialog with Don't allow as default; an Allow within 1 s is a reflex and asked again (a native
+dialog cannot hold a button disabled). Stop leaves the session (the session window is
+destroyed), so Share again reconnects and asks again; the session page is told to stop and
+leave first, so the helper sees the person go at once, and the window goes 250 ms later
+whatever the page does. Pages are served on `app://support/` with their CSP as a header; the
+`media` permission is granted only for the capture. The name is changed in the control window
+while connecting. Tests: `tests/unit/support-link.test.ts`, `support-displays.test.ts`,
+`support-consent.test.ts`, `support-allowlist.test.ts` and `tests/e2e/support-app.test.ts`
+(Electron with Playwright, a private Xvfb on Linux; not registered on macOS, where a CI runner
+cannot grant Screen Recording).
 
 ## 5. App: overlay
 
@@ -103,7 +113,12 @@ point appears in the overlay's DOM at the matching display position (within 2 px
 scaling); the overlay ignores mouse events; switching display moves the overlay and changes the
 stage aspect; a laser mark drawn on the overlay reaches the helper's video while the
 helper's board draws none of its own. Unit: frame-to-display mapping with scale factors.
-**Result:** _pending_
+**Result:** done. The overlay is one transparent window per shared display with the
+whiteboard read only; under Xvfb without a window manager it is a pixel short of the display
+(1279x799), which moves a mark by less than a pixel. A ping at the middle of the helper's frame
+lands within 3 px of the middle of the person's display; the helper's own board draws no laser,
+ping or emote. **Show my other screen** asks with a native dialog and captures once more; it is
+not covered by an automated test (one display under Xvfb): manual checklist.
 
 ## 6. Security hardening and review
 
@@ -124,7 +139,20 @@ block links for 10 minutes). Unit: `tests/unit/support-consent.test.ts` (state m
 transitions and timers with a fake clock), `tests/unit/support-allowlist.test.ts` and
 `tests/unit/support-link.test.ts` extended with malformed, oversized and switch-injection
 input; IPC handlers refuse calls from the wrong window.
-**Result:** _pending_
+**Result:** done, except the review items that need a packaged build (step 7) and a person:
+the consent state machine lives in `support-app/src/main/controller.ts` with its pure rules in
+`consent.ts` (unit tested); the invariant tests are in `tests/e2e/support-app.test.ts` (no
+capture before consent, a closed overlay or a screen lock stops, a reconnect from another host
+stops and one from the same host goes on, a second capture and any camera or microphone are
+refused, no Node, no window, no eval or inline script in any page, the control window's bridge
+has only `act` and `onState`, three refusals pause links). The 60-minute question and the
+display switch use the same native dialogs and are on the manual checklist (an hour is too
+long for a test). Not done: relayed-only connections (DESIGN open question 9); an external
+review (open question 8). Review against Electron's security checklist: context isolation,
+sandbox, no Node integration, CSP, no remote content, navigation and new windows refused,
+permission handlers, IPC sender checks, `app://` scheme instead of `file://`, fuses (step 7),
+current Electron: all in place; `webviewTag` is off by default and `will-attach-webview` is
+refused.
 
 ## 7. Packaging, CI and release
 

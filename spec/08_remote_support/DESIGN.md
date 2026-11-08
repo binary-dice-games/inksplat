@@ -61,8 +61,9 @@ The start page gets a second action next to **Start session**: **Start a support
 3. The toolbar has only the pointer, with its modes cursor, laser and emote (magnify stays: it
    is local to the helper). The canvas buttons, Clear, Open, the Screen list and the share
    button are hidden. **End session** ends it for both.
-4. If the person stops sharing, the status reads *Bob stopped sharing* with no automatic retry;
-   the person can share again from the app (**Share again**).
+4. If the person stops sharing, the app leaves the session and the status reads *Bob stopped
+   sharing or lost the connection* with no automatic retry; the person can share again from the
+   app (**Share again**), which reconnects and asks again.
 
 A support session admits **one guest**: once the app has joined, the host locks the room
 (`session.lock`) so a forwarded link lets nobody else in, and **New link** is hidden. If that
@@ -89,14 +90,17 @@ picker (xdg portal); the app says so before it appears.
 
 **App, every session:**
 
-1. Opened by the link, the control window shows *Connecting to the helper...*, then the
-   consent: a **native dialog** of the system (section 7.3 R9) over the control window, which
-   explains it in large text around it. The dialog says: "Someone who says they are **Ana**
-   wants to see your screen. Ana will see everything on this screen, but cannot click or type.
-   Ana should read you this code: **482 913**. Only allow someone you contacted yourself or
-   know well. Banks, Microsoft, Apple and the police never ask for this." Buttons
-   **Don't allow** (the default) and **Allow** (enabled after 3 seconds). The helper's page
-   shows the same code (the safety code, 7.3 R5). Nothing is captured before **Allow**.
+1. Opened by the link, the control window shows *Connecting to the helper...* (with the
+   person's name, which they can change there), then for 3 seconds the explanation in large
+   text: who wants to see the screen, the safety code, and the warning. Then the consent: a
+   **native dialog** of the system (section 7.3 R9) over the control window. It says: "Someone
+   who says they are **Ana** wants to see your screen. Ana will see everything on this screen,
+   but cannot click or type. Ana should read you this code: **482 913**. Only allow someone
+   you contacted yourself or know well. Banks, Microsoft, Apple and the police never ask for
+   this." Buttons **Don't allow** (the default, also Enter and Escape) and **Allow**. A native
+   dialog cannot hold a button disabled, so an **Allow** pressed less than a second after the
+   dialog appeared is taken for a reflex and the dialog asks again. The helper's page shows the
+   same code (the safety code, 7.3 R5). Nothing is captured before **Allow**.
 2. After **Allow**: the overlay appears with a thin coloured border around the shared display
    (the "you are being seen" sign) and the control window shrinks to a small always-on-top bar
    in a corner: "Ana can see your screen" and **Stop**. The bar can be dragged, never closed
@@ -104,9 +108,11 @@ picker (xdg portal); the app says so before it appears.
 3. The helper's cursor (an arrow with their name, as on the board), laser trails, pings and
    emotes appear on the overlay. Clicks and keys go to the person's own programs, never to the
    overlay.
-4. **Stop** (or closing the bar, or the helper ending) stops capture, removes the overlay and
-   shows "Sharing stopped" with **Share again** (while still connected; asks again) and
-   **Close**. Closing quits the app; it does not stay in the tray or start with the system.
+4. **Stop** (or closing the bar, or the helper ending) stops capture, removes the overlay,
+   leaves the session (the main process destroys the session window, so nothing can go on
+   capturing) and shows "Sharing stopped" with **Share again** (reconnects with the same link
+   and asks again) and **Close**. Closing quits the app; it does not stay in the tray or start
+   with the system.
 5. Locking the screen or putting the computer to sleep stops sharing too. After 60 minutes the
    bar asks "Keep sharing with Ana?" (**Keep sharing** / **Stop**) and stops by itself if no one
    answers within 60 seconds.
@@ -196,11 +202,17 @@ Section 7 explains what each of these defends against.
   bundled page) and validates its arguments; renderers can ask to stop, never to start.
 - Consent is a native dialog owned by the main process; the main process's state machine alone
   lets `setDisplayMediaRequestHandler` answer (only the session window, video only, the chosen
-  display). `setPermissionRequestHandler` and `setPermissionCheckHandler` refuse everything
-  else. If the bar or the overlay closes, crashes, hides or leaves the screen, the main process
-  destroys the session window.
+  display, once per Allow or display switch). `setPermissionRequestHandler` grants only the
+  `media` permission that capture asks for, to the session page, during that grant, without
+  audio; `setPermissionCheckHandler` refuses everything. If the bar or the overlay closes,
+  crashes or hides, the main process stops: it tells the session page to stop capturing and
+  leave (so the helper sees it go at once) and destroys the session window 250 ms later
+  whatever the page does. A bar dragged off its display is moved back.
 - The session renderer passes to the overlay only an allowlist of validated `wb` marks (cursor,
   laser, ping, emote).
+- A development run (not packaged, as in the tests) does not refuse debugging switches (the
+  test driver needs them) and lets the session page connect to a loopback tracker; a packaged
+  app does neither.
 - The protocol is registered with a `--` separator and the app reads only the argument after
   it (at most 2 KB). The URL is parsed in the main process with `parseInvite`
   (`packages/defaults`): only
@@ -284,8 +296,8 @@ before), and `screen` = the guest's stream. `cleanStage` accepts `mode` only as 
 
 ### 5.2 The app's hello
 
-The app joins with its name (the computer's user name by default, editable on the consent
-screen; open question 4) and announces itself on the `screen` channel after **Allow** with the
+The app joins with its name (the computer's user name by default, editable in the control
+window while connecting; open question 4) and announces itself on the `screen` channel after **Allow** with the
 existing `{cmd: 'offer', surface: 'monitor', w, h}` (`spec/07` section 5.1). `w` and `h` are
 the display's size in physical pixels. A new optional field `client: 'support'` lets the host
 show "inksplat Support 1.2.0" in the log and refuse an app older than it supports
@@ -315,15 +327,15 @@ from the roster (a peer without an offer). **Don't allow** leaves the session.
 ### 5.4 Reconnecting
 
 A dropped link (sleep, Wi-Fi change) ends the guest; the room unlocks and the app, still
-holding the link, rejoins on its own for 2 minutes (backoff 1, 2, 4, 8, then every 15 s), with
-*Reconnecting...* in the bar and the capture kept (paused on the uplink by the host until it is
-the active stream again). Consent is not asked again within those 2 minutes **only if the host
+holding the link, rejoins on its own for 2 minutes (the session's own reconnect), with
+*Reconnecting...* in the bar and the capture kept but taken off the uplink by the session page
+until the main process has checked the host. Consent is not asked again within those 2 minutes **only if the host
 is the same**: the host uses one DTLS certificate for the whole session (a new optional
 `certificates` session option, passed to every `RTCPeerConnection`), the app pins the
 fingerprint it consented to, and a reconnect to any other fingerprint asks again (with a new
 safety code). A screen lock or sleep in between ends consent anyway (section 7, I8). After the
-2 minutes the app shows "The connection was lost" with **Try again** (asks for consent again)
-and **Close**.
+2 minutes the app stops and shows "The connection was lost" with **Share again** (asks for
+consent again) and **Close**.
 
 The safety code (7.3 R5) is the first 32 bits of SHA-256 over the two fingerprints of the link
 (sorted, so both sides agree), modulo one million, as six decimal digits (`safetyCode` in
@@ -376,7 +388,8 @@ The app's version is its own (`support-app/package.json`, semver); it records th
 | macOS 12+ | DMG, universal | Developer ID signed and notarized; `NSScreenCaptureUsageDescription` set |
 | Linux | AppImage and `.deb`, x64 | `.desktop` file with `x-scheme-handler/inksplat-support` |
 
-Updates: `electron-updater` from the project's GitHub Releases, checked when the app starts and
+Updates (Windows and macOS; Linux builds do not update themselves, 7.3 R11): `electron-updater`
+from the project's GitHub Releases, checked when the app starts and
 applied on the next start (never in the middle of a session), and only when the new build is
 signed by the same publisher (section 7.3 R11). Signing keys live in a protected GitHub
 environment that needs a second maintainer's approval. Releases come from a workflow on
@@ -398,7 +411,7 @@ These hold whatever the helper, the network or a web page does. Each has a test 
 | # | Invariant |
 |---|---|
 | I1 | **No capture without consent** given by the person, in this app process, to this host (7.3 R9: the decision is a native dialog the renderers cannot click). |
-| I2 | **No capture without the signs:** while the capture runs, the bar and the border are on screen. If either window closes, crashes, hides or leaves the screen, the main process destroys the session window, which ends the capture. |
+| I2 | **No capture without the signs:** while the capture runs, the bar and the border are on screen. If either window closes, crashes or hides, the main process destroys the session window, which ends the capture; a bar dragged off its display is moved back. |
 | I3 | **Stop always works:** one click, local, offline, whatever the session's state. |
 | I4 | **The helper cannot change what is captured:** no message starts, resumes or widens a capture (other display, audio, camera, a window); only the person's clicks do. |
 | I5 | **Show, never act:** no code path injects input, reads or writes the person's files, runs programs or opens URLs other than the fixed download page. |
@@ -478,16 +491,17 @@ default) and die when the helper ends the session. Reconnects go only to the sam
 **R6. Drive-by launches** (C; M, H). A page opens the app with its own token, again and again,
 hoping for a reflex click on Allow.
 *Mitigations:* the browser asks before opening the app; consent is always needed (I1);
-**Allow** is not the default button and is enabled only 3 seconds after the dialog appears; a
-link that arrives while a consent dialog is open is ignored with a notice; after three
+the control window explains for 3 seconds before the dialog appears; **Don't allow** is the
+default button, and an **Allow** less than a second after the dialog appeared is a reflex the
+dialog asks again; a link that arrives while a consent dialog is open is ignored with a notice; after three
 **Don't allow** in 10 minutes the app ignores links for 10 minutes and says so.
 *Residual:* a person who allows a stranger anyway (R1).
 
 **R7. The network** (D; L, L-M). Trackers see topic hashes and IPs; offers are sealed with the
 room key; media and data are DTLS-SRTP encrypted end to end. The helper learns the person's IP
 (a direct WebRTC link), which tells roughly where they are.
-*Mitigations:* documented; when the helper's settings have a TURN server, the app can be told
-to use relayed paths only (`iceTransportPolicy: 'relay'`, open question 9).
+*Mitigations:* documented. Relayed-only paths (`iceTransportPolicy: 'relay'` with a TURN
+server) are not built yet (open question 9).
 *Residual:* the IP is visible to the helper by default.
 
 **R8. A message exploits the app** (A, B; L, C). A crafted `wb`, `stage` or `screen` message, or
@@ -520,8 +534,9 @@ parser (4.1); it quits at start if it finds debugging or unknown Chromium switch
 **R11. A malicious update** (F; L, C). Whoever can publish a release can turn every installed
 app into spyware. The highest-impact risk.
 *Mitigations:* the updater installs only builds signed by the same publisher (Authenticode
-publisher check on Windows, the Developer ID requirement of Squirrel.Mac on macOS; Linux
-AppImage updates check a signature against a key in the app); signing keys live in a
+publisher check on Windows, the Developer ID requirement of Squirrel.Mac on macOS); Linux
+builds do not update themselves (an AppImage update carries no signature the updater checks),
+and ask to be downloaded again when they are too old; signing keys live in a
 protected GitHub environment that needs a second maintainer's approval, releases come only
 from protected `support-v*` tags on the default branch, and the organisation requires 2FA;
 updates apply on the next start, never during a session; CI runs the invariant tests (7.5) on
@@ -611,13 +626,14 @@ Open questions (default in brackets, used unless decided otherwise):
    Clear button, the overlay already draws strokes]
 3. Remote control later? [not planned; it would need a separate design and stronger consent]
 4. The name the app uses: the computer's user name or asked each time? [the user name,
-   editable on the consent screen, remembered]
+   editable in the control window while connecting, remembered]
 5. Languages for the first version. [English and Spanish]
 6. Support video defaults (4.3). [30 fps, 4000 kbit/s, 1920 on the long side, content hint
    `text`]
 8. An external security review before the app is offered widely? [yes, before the first
    public release; the internal review of 7.5 before any release]
 9. Relayed-only connections for the app when a TURN server is configured, to hide the person's
-   IP from the helper? [offered as a helper setting, off by default]
+   IP from the helper? [wanted as a helper setting, off by default; not built in the first
+   version]
 10. Should the safety code be required (the person types it) rather than read and compared?
     [no: typing is hard for the target users; comparing is the default]

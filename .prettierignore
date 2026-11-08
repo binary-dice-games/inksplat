@@ -15,3 +15,5 @@ docs/
 .claude/
 .github/
 spikes/
+support-app/dist/
+support-app/release/

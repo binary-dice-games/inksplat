@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- MIT License © 2026 Binary Dice Games -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>inksplat Support overlay</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+      }
+      #board {
+        position: fixed;
+        inset: 0;
+      }
+      /* The sign that the screen is being seen, drawn by the app (not by the helper). */
+      #border {
+        position: fixed;
+        inset: 0;
+        border: 4px solid #e5484d;
+        pointer-events: none;
+        z-index: 10;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="board"></div>
+    <div id="border"></div>
+    <script src="overlay.js"></script>
+  </body>
+</html>
