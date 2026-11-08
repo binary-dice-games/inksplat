@@ -77,7 +77,8 @@ const ACTIVE: ReadonlySet<Screen> = new Set([
 ]);
 
 const CONTROL_SIZE = { width: 520, height: 600 };
-const BAR_SIZE = { width: 420, height: 112 };
+/** The bar's content area (the window's frame and title bar come on top of it). */
+const BAR_SIZE = { width: 460, height: 104 };
 
 export interface ControllerOptions {
   /** The folder of the built pages and preloads. */
@@ -614,7 +615,11 @@ export class Controller {
     w.setMaximizable(false);
     w.setResizable(false);
     w.setFullScreenable(false);
-    w.setBounds(barBounds(display.workArea, BAR_SIZE));
+    // Sized by its content, so a title bar (Windows, macOS) does not eat into the buttons, then
+    // put in the corner with its frame.
+    w.setContentSize(BAR_SIZE.width, BAR_SIZE.height);
+    const outer = w.getBounds();
+    w.setBounds(barBounds(display.workArea, { width: outer.width, height: outer.height }));
     w.setAlwaysOnTop(true, 'screen-saver', 1); // above the overlay
     w.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
     w.show();

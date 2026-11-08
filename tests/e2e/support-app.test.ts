@@ -83,6 +83,15 @@ describe('inksplat Support', () => {
     // The frame is the person's display.
     expect(await page.evaluate(() => document.querySelector('#link') !== null)).toBe(true);
     expect(await app.windows()).toEqual({ session: true, overlay: true });
+    // The bar: its status and buttons fit inside its content area.
+    await expect.poll(() => control.locator('button[data-action=stop]').count()).toBe(1);
+    const fits = await control.evaluate(() =>
+      [...document.querySelectorAll('.status, button')].every((e) => {
+        const r = e.getBoundingClientRect();
+        return r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+      }),
+    );
+    expect(fits).toBe(true);
   });
 
   it("draws the helper's cursor, pings and laser on the person's screen, where the helper put them", async () => {
