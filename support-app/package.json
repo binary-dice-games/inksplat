@@ -1,0 +1,22 @@
+{
+  "name": "inksplat-support",
+  "productName": "inksplat Support",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lets a helper see your screen and point at it, for remote support.",
+  "author": "Binary Dice Games",
+  "license": "MIT",
+  "homepage": "https://binary-dice-games.github.io/inksplat/support.html",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "start": "node scripts/build.mjs && electron .",
+    "package": "node scripts/build.mjs && electron-builder --config electron-builder.json --publish never",
+    "package:dir": "node scripts/build.mjs && electron-builder --config electron-builder.json --dir --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.9.3",
+    "electron-builder": "26.18.0",
+    "electron-updater": "6.8.11"
+  }
+}

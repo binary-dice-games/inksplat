@@ -14,3 +14,15 @@ file (`.inksplat.zip`: one JSON file per canvas, the settings, and the pictures 
 everything opened becomes the opener's own, so it can be moved and changed there.
 The presenter page asks before closing or reloading (that ends the session) and keeps a backup of the board in the
 browser, written a second after every change; the next session offers to **Resume** it or **Start new**.
+
+## Support sessions
+
+**Start a support session** on the presenter page helps one person with their computer
+([support-app.md](support-app.md)). Send them the link (**Copy text and link** has a message
+ready). They install inksplat Support once and press **Allow**; their whole screen appears and
+sets the shape of the board. The toolbar has only the pointer: the cursor, the laser (a trail,
+or a ping with a click) and emotes, which the person sees on their own screen. You see your
+marks in the video, a moment late, so they are not drawn twice. Read the **safety code** to the
+person: their app shows the same digits; if they differ, end the session. The room takes one
+person; if they stop or lose the connection they can share again with the same link.
+**Settings > Support** sets the video (15 to 30 frames per second).

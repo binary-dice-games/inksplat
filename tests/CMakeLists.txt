@@ -37,6 +37,12 @@ inksplat_add_test(present_settings tests/unit/present-settings.test.ts)
 inksplat_add_test(site_build tests/unit/site-build.test.ts)
 inksplat_add_test(still_refresh tests/unit/still-refresh.test.ts)
 inksplat_add_test(codec_choice tests/unit/codec-choice.test.ts)
+inksplat_add_test(support_page tests/unit/support-page.test.ts)
+inksplat_add_test(support_link tests/unit/support-link.test.ts)
+inksplat_add_test(support_displays tests/unit/support-displays.test.ts)
+inksplat_add_test(support_consent tests/unit/support-consent.test.ts)
+inksplat_add_test(support_allowlist tests/unit/support-allowlist.test.ts)
+inksplat_add_test(support_build tests/unit/support-build.test.ts)
 
 # Browser tests need Chrome (INKSPLAT_CHROME), see docs/building.md.
 inksplat_add_test(webrtc tests/e2e/webrtc.test.ts PROJECT e2e)
@@ -47,3 +53,14 @@ inksplat_add_test(streams tests/e2e/streams.test.ts PROJECT e2e)
 inksplat_add_test(relay_spike tests/e2e/relay-spike.test.ts PROJECT e2e)
 inksplat_add_test(participant_streaming tests/e2e/participant-streaming.test.ts PROJECT e2e)
 inksplat_add_test(still_refresh_chrome tests/e2e/still-refresh.test.ts PROJECT e2e)
+
+# inksplat Support in Electron (spec/08_remote_support): needs a display (on Linux the test starts
+# its own Xvfb). macOS asks a person to grant Screen Recording, which a CI runner cannot do, so
+# there the app is checked by hand (docs/manual-testing.md).
+if(NOT APPLE)
+  inksplat_add_test(support_app tests/e2e/support-app.test.ts PROJECT e2e TIMEOUT 600)
+endif()
+
+# The packaged app: its fuses, its archive, and no code run through Node switches (packs an
+# unpacked build with electron-builder, so it takes a few minutes).
+inksplat_add_test(support_package tests/e2e/support-package.test.ts PROJECT e2e TIMEOUT 900)

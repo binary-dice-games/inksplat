@@ -88,6 +88,20 @@ presenter on Chrome.
 | 74 | A viewer on a phone | No **Share screen** button; watching and drawing work |
 | 75 | The viewer whose stream is on the screen closes its tab, or is removed | The screen goes black for everybody at once; the stream leaves the presenter's list |
 | 76 | With the pointer, drag from an empty place over two stickers, a line and a note; drag one; pick a colour in the bar; Ctrl+C, move, Ctrl+V; Delete | All four are outlined and the bar says "4 selected"; all move together; the line and note change colour; the copies appear at the pointer, selected, on the viewer too; Delete removes them |
+| 77 | inksplat Support: install from the landing page on Windows 11, macOS 15 and Ubuntu (the `.deb`); open a support link | The browser asks to open the app; the control window connects, explains for 3 s, then the system's dialog asks with the helper's name and the code |
+| 78 | Compare the code on both sides; press **Allow** at once (under a second), then after reading | The codes match; the quick Allow asks again; the second shares the screen at 30 fps and the bar shows **Stop** |
+| 79 | The helper uses the laser, pings and emotes over buttons and menus of the person's screen | Each lands on the spot on the person's screen; the person's clicks go to their programs, never to the overlay; the helper sees the marks once, in the video |
+| 80 | macOS first run without Screen Recording | The app explains, **Open System Settings** goes to the right page, **I turned it on** restarts the app with the link |
+| 81 | Two displays: **Show my other screen** | A system dialog asks; the capture, the overlay and the bar move to the other display; the helper's frame takes its shape |
+| 82 | Lock the screen, or close the laptop lid, while sharing | Sharing stops at once; after unlocking the app says why and offers **Share again** (which asks again) |
+| 83 | Wi-Fi off for 20 s while sharing, then on | The bar says Reconnecting; within 2 minutes it shares again without asking; after 2 minutes it stops |
+| 84 | Share for an hour | The system asks "Keep sharing?"; no answer within a minute stops |
+| 85 | Close the bar; try to minimize it; kill the overlay's process | Each stops sharing; the helper sees the person go |
+| 86 | Open a second support link while sharing; open three links and say no each time | The app asks before ending the session; after three refusals it ignores links for 10 minutes and says so |
+| 87 | Overlay over a full-screen video, a game and a presentation; on Linux X11 and Wayland | The marks show on top (X11 needs a compositor, else the overlay hides the screen; Wayland shows the system's own picker) |
+| 88 | Start the installed app with `--remote-debugging-port=9222`, `--inspect`, and `ELECTRON_RUN_AS_NODE=1` | It does not start (the first two) and runs no script (the last) |
+| 89 | Install on Windows without admin rights; let the updater fetch a newer signed release; then one signed with another certificate | Installs per user; the update installs on the next start, never during a session; the foreign one is refused |
+| 90 | CPU of the person's computer at 15 and 30 fps on a modest laptop | Note the figures; the encoder lowers its rate under load rather than freezing |
 
 ## Known untested areas (from nymph)
 

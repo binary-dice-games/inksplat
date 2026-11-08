@@ -12,6 +12,12 @@
     "isolatedModules": true,
     "types": ["node"]
   },
-  "include": ["packages/**/*.ts", "tests/**/*.ts", "vitest.config.ts", "viewer/**/*.ts"],
+  "include": [
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts",
+    "viewer/**/*.ts",
+    "support-app/**/*.ts"
+  ],
   "exclude": ["node_modules", "build"]
 }

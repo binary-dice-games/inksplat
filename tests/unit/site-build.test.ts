@@ -63,6 +63,17 @@ describe('the Pages site', () => {
     }
   });
 
+  it('ships the support landing page, also under the protocol major (spec/08_remote_support)', () => {
+    for (const dir of ['', `v${protocolMajor()}/`]) {
+      const page = readFileSync(join(out, dir, 'support.html'), 'utf8');
+      expect(page).toContain('support.js');
+      expect(page).toContain('Open inksplat Support');
+      expect(page).not.toContain('{{style}}');
+      const code = readFileSync(join(out, dir, 'support.js'));
+      expect(gzipSync(code).length).toBeLessThan(20 * 1024);
+    }
+  });
+
   it('ships pdf.js next to the pages, under the protocol major too, for the previews of PDFs', () => {
     for (const dir of ['', `v${protocolMajor()}/`]) {
       for (const name of ['pdf.min.mjs', 'pdf.worker.min.mjs', 'pdfjs-LICENSE.txt']) {

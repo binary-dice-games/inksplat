@@ -10,6 +10,7 @@ It runs on **Linux, macOS and Windows**.
 | Node.js | 20 | with npm |
 | CMake | 3.14 | entry point for check and test |
 | Google Chrome | recent | `tests/e2e/webrtc.test.ts` |
+| Xvfb | any | Linux without a display: the support app's tests ([support-app.md](support-app.md)) |
 
 Configuring runs `npm ci` (or `npm install` without a lock file) when
 `node_modules/` is missing.
@@ -21,6 +22,8 @@ cmake -S . -B build
 cmake --build build --target check        # lint, typecheck, format check
 cmake --build build --target viewer       # the viewer and presenter pages in viewer/dist
 cmake --build build --target site         # the whole Pages site in site/
+cmake --build build --target support-app  # inksplat Support in support-app/dist
+cmake --build build --target support-package  # its installers in support-app/release
 ctest --test-dir build -C Debug --output-on-failure --parallel
 ```
 
@@ -52,6 +55,7 @@ npm run test:e2e       # browser tests (project "e2e"), needs Chrome
 |------|----------|
 | `packages/collab-session/` | Serverless WebRTC rooms and video (copied from nymph, adapted) |
 | `packages/collab-whiteboard/` | Whiteboard (copied from nymph, adapted) |
+| `support-app/` | inksplat Support, the Electron app of support sessions ([support-app.md](support-app.md)) |
 | `packages/defaults/` | Trackers, ICE servers, video presets, `stage` message, invite links |
 | `viewer/` | The viewer app (`src/main.ts`) and the presenter page (`src/present.ts`, `src/share-host.ts`) |
 | `scripts/` | Build scripts: `build-viewer`, `build-site`, `smoke-site` |

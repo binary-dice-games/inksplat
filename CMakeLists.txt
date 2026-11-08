@@ -38,6 +38,23 @@ add_custom_target(
   COMMENT "inksplat: assemble the GitHub Pages site"
   VERBATIM)
 
+# inksplat Support, the desktop app of support sessions (spec/08_remote_support), in support-app/dist.
+add_custom_target(
+  support-app
+  COMMAND "${INKSPLAT_NPM}" run build -w support-app
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "inksplat: build inksplat Support"
+  VERBATIM)
+
+# Its installers for this system, in support-app/release (signed when the signing variables of
+# docs/support-app.md are set).
+add_custom_target(
+  support-package
+  COMMAND "${INKSPLAT_NPM}" run package -w support-app
+  WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+  COMMENT "inksplat: package inksplat Support"
+  VERBATIM)
+
 if(INKSPLAT_BUILD_TESTS)
   enable_testing()
   add_subdirectory(tests)

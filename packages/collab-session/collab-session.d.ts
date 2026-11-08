@@ -65,6 +65,8 @@ export interface UplinkParams {
   maxBitrate?: number;
   scale?: number;
   contentHint?: 'detail' | 'text' | 'motion' | '';
+  /** How the encoder gives way on a slow link; default `maintain-resolution`. */
+  degradationPreference?: 'balanced' | 'maintain-framerate' | 'maintain-resolution';
 }
 
 export type RendezvousSpec =
@@ -92,6 +94,12 @@ export interface SessionOptions {
   me?: Partial<Presence>;
   rendezvous?: RendezvousSpec[];
   iceServers?: RTCIceServer[];
+  /**
+   * DTLS certificates for every peer connection of this session (normally one, from
+   * `RTCPeerConnection.generateCertificate`), so this peer's fingerprint is the same on every
+   * link; default: a new certificate per link.
+   */
+  certificates?: RTCCertificate[];
   /** Host: filters guests' messages before they are delivered or relayed. */
   accept?: (channel: string, message: unknown, from: string) => boolean;
   connectTimeoutMs?: number;
@@ -173,6 +181,11 @@ export class Session {
   uplink(peerId: string): MediaStream | null;
   /** Host: whether guest `peerId` sends its uplink, and with which limits. */
   uplinkParams(peerId: string, params: UplinkParams): void;
+  /**
+   * The SHA-256 DTLS fingerprints (`AB:CD:...`) of the link to `peerId` (a guest asks for the
+   * host), or null when there is no WebRTC link to it yet.
+   */
+  fingerprints(peerId: string): { local: string; remote: string } | null;
   /**
    * Guest: the stream offered to the host, sent only while the host asks; null stops it.
    * @throws {SessionError} on a host
@@ -257,6 +270,9 @@ export class FrameRouter<F extends RoutedFrame = RoutedFrame> {
   keyFrameWanted(): void;
   stop(): void;
 }
+
+/** The SHA-256 fingerprint an SDP gives (`AB:CD:...`, upper case), or null. */
+export function sdpFingerprint(sdp: string | undefined): string | null;
 
 /** The video codecs (lower-case MIME types) an SDP lists for media section `mid`, in order. */
 export function sdpCodecs(sdp: string | undefined, mid: string | null): string[];

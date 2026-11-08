@@ -1,0 +1,86 @@
+<!doctype html>
+<!-- MIT License © 2026 Binary Dice Games -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; base-uri 'none'; form-action 'none'"
+    />
+    <title>inksplat Support</title>
+    <link rel="icon" href="icon.png" />
+    <!--{{style}}-->
+    <style>
+      .support-card {
+        max-width: 560px;
+        font-size: 18px;
+        line-height: 1.5;
+      }
+      .support-card h1 {
+        font-size: 28px;
+      }
+      .support-card .big {
+        display: inline-block;
+        font-size: 20px;
+        padding: 14px 22px;
+        text-decoration: none;
+      }
+      .warning-box {
+        border: 2px solid #e5484d;
+        border-radius: 10px;
+        padding: 10px 14px;
+        margin: 16px 0;
+      }
+      .steps li {
+        margin: 6px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="screen">
+      <div class="card support-card">
+        <div class="card-brand"><img src="icon.png" alt="" />inksplat Support</div>
+        <section id="bad" hidden>
+          <h1>This link does not work</h1>
+          <p>Ask the person helping you to send the link again.</p>
+        </section>
+        <section id="good" hidden>
+          <h1>Let someone help you with your computer</h1>
+          <p>
+            The person helping you will see your screen and point at things on it. They
+            <strong>cannot</strong> click or type on your computer, and you can stop at any time.
+          </p>
+          <p class="warning-box">
+            Only continue if you contacted this person yourself or know them well. Banks, Microsoft,
+            Apple and the police never ask you to share your screen.
+          </p>
+          <p><a id="open" class="button primary big" href="#">Open inksplat Support</a></p>
+          <p class="muted">Your browser may ask whether to open inksplat Support: say yes.</p>
+          <p id="mobile" class="muted" hidden>
+            inksplat Support runs on a Windows, Mac or Linux computer, not on a phone or tablet.
+            Open this link on the computer you need help with.
+          </p>
+          <h2>Don't have it yet?</h2>
+          <ol class="steps">
+            <li>
+              <a id="download" class="button primary" href="#" hidden>Download</a>
+            </li>
+            <li>Open the file you downloaded and follow the steps to install it.</li>
+            <li>Come back to this page and press <strong>Open inksplat Support</strong> again.</li>
+          </ol>
+          <p id="macNote" class="muted" hidden>
+            On a Mac, the app asks the first time for permission to record the screen, and shows you
+            where to turn it on.
+          </p>
+          <details>
+            <summary>Other systems</summary>
+            <ul id="others"></ul>
+          </details>
+        </section>
+      </div>
+    </main>
+    <script src="support.js"></script>
+  </body>
+</html>

@@ -2,7 +2,9 @@
 /**
  * @file Defaults and small pure helpers shared by the presenter page and the
  * viewer: trackers, ICE servers, video presets, the `stage` message and
- * invite links. See spec/01_core_features/DESIGN.md.
+ * invite links. See spec/01_core_features/DESIGN.md. Support sessions (the stage's `mode`, the
+ * support link and app link, the support video settings, the safety code) are in
+ * spec/08_remote_support/DESIGN.md.
  */
 
 /** Wire protocol id; changes only on incompatible changes. */
@@ -175,6 +177,8 @@ export interface Stage {
   /** Peer id of the stream the host previews, absent when none (tells its owner). */
   preview?: string;
   title?: string;
+  /** `support`: a support session (spec/08_remote_support); absent: an ordinary session. */
+  mode?: 'support';
 }
 
 /** The backgrounds drawn behind a canvas instead of the screen. */
@@ -284,6 +288,9 @@ export function cleanStage(message: unknown): Stage | null {
   if (typeof m.title === 'string' && m.title.length > 0) {
     stage.title = printable(m.title, MAX_TITLE);
   }
+  if (m.mode === 'support') {
+    stage.mode = 'support';
+  }
   return stage;
 }
 
@@ -295,9 +302,23 @@ export const SCREEN_CHANNEL = 'screen';
 /** The surface a stream shows (`displaySurface`). */
 export type ScreenSurface = 'browser' | 'window' | 'monitor' | 'unknown';
 
-/** A guest tells the host it captures (`offer`, again on a size change) or stopped (`withdraw`). */
+/**
+ * A guest tells the host it captures (`offer`, again on a size change) or stopped (`withdraw`).
+ * The support app adds `client: 'support'` and its version `v` to its offer.
+ */
 export type ScreenMessage =
-  { cmd: 'offer'; surface: ScreenSurface; w: number; h: number } | { cmd: 'withdraw' };
+  | {
+      cmd: 'offer';
+      surface: ScreenSurface;
+      w: number;
+      h: number;
+      client?: 'support';
+      v?: string;
+    }
+  | { cmd: 'withdraw' };
+
+/** A version string as the support app sends it (`1.2.0`), at most 16 characters. */
+const VERSION = /^[0-9A-Za-z.+-]{1,16}$/;
 
 /** The screen message if well formed, else null; unknown fields are dropped. */
 export function cleanScreenMessage(message: unknown): ScreenMessage | null {
@@ -320,7 +341,14 @@ export function cleanScreenMessage(message: unknown): ScreenMessage | null {
     m.surface === 'browser' || m.surface === 'window' || m.surface === 'monitor'
       ? m.surface
       : 'unknown';
-  return { cmd: 'offer', surface, w: m.w, h: m.h };
+  const offer: ScreenMessage = { cmd: 'offer', surface, w: m.w, h: m.h };
+  if (m.client === 'support') {
+    offer.client = 'support';
+    if (typeof m.v === 'string' && VERSION.test(m.v)) {
+      offer.v = m.v;
+    }
+  }
+  return offer;
 }
 
 // ── Invite links ──────────────────────────────────────────────────────────────
@@ -384,4 +412,136 @@ export function parseInvite(hash: string): Invite | null {
 /** The room token in a URL hash (`#inksplat=<token>`), or null if absent or malformed. */
 export function parseInviteHash(hash: string): string | null {
   return parseInvite(hash)?.token ?? null;
+}
+
+// ── Support sessions (spec/08_remote_support/DESIGN.md) ───────────────────────
+
+/** The URL scheme the support app registers: `inksplat-support://join#inksplat=<token>`. */
+export const SUPPORT_SCHEME = 'inksplat-support';
+
+/** The landing page of a support link, next to the viewer. */
+export const SUPPORT_PAGE = 'support.html';
+
+/** The longest app link the support app reads. */
+export const SUPPORT_URL_MAX = 2048;
+
+/** The longest name of a helper the support app shows (longer ones are cut). */
+export const SUPPORT_NAME_MAX = 24;
+
+/** Where the support app's installers are downloaded (the latest release of this repository). */
+export const SUPPORT_RELEASES =
+  'https://github.com/binary-dice-games/inksplat/releases/latest/download/';
+
+/** The installer of each system, as the release workflow names them. */
+export const SUPPORT_DOWNLOADS = {
+  windows: 'inksplat-Support-Setup.exe',
+  mac: 'inksplat-Support.dmg',
+  linux: 'inksplat-Support.AppImage',
+  linuxDeb: 'inksplat-Support.deb',
+} as const;
+
+/**
+ * The support link the helper sends: `<base>support.html#inksplat=<token>[&tr=...]`, `base`
+ * being the site root (the viewer's address).
+ */
+export function supportLink(
+  base: string,
+  fragment: string,
+  extra: { trackers?: readonly string[] } = {},
+): string {
+  return inviteLink(new URL(SUPPORT_PAGE, base).toString(), fragment, extra);
+}
+
+/** The app link for an invite: `inksplat-support://join#inksplat=<token>[&tr=...]`. */
+export function supportAppUrl(invite: Invite): string {
+  const params = new URLSearchParams({ [FRAGMENT_KEY]: invite.token });
+  for (const tracker of invite.trackers ?? []) {
+    params.append(TRACKER_KEY, tracker);
+  }
+  return `${SUPPORT_SCHEME}://join#${params.toString()}`;
+}
+
+/**
+ * The invite an app link carries, or null for anything but exactly
+ * `inksplat-support://join[/]#inksplat=<token>[&tr=wss://...]` of at most
+ * {@link SUPPORT_URL_MAX} characters (no user, port, query or other path).
+ */
+export function parseSupportUrl(url: unknown): Invite | null {
+  if (typeof url !== 'string' || url.length > SUPPORT_URL_MAX) {
+    return null;
+  }
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return null;
+  }
+  if (
+    u.protocol !== `${SUPPORT_SCHEME}:` ||
+    u.hostname !== 'join' ||
+    u.username !== '' ||
+    u.password !== '' ||
+    u.port !== '' ||
+    u.search !== '' ||
+    (u.pathname !== '' && u.pathname !== '/')
+  ) {
+    return null;
+  }
+  return parseInvite(u.hash);
+}
+
+/** Bounds and defaults of a support session's video (one viewer: a fluid video; DESIGN 4.3). */
+export const SUPPORT_VIDEO_LIMITS = {
+  fps: { min: 15, max: 30, default: 30 },
+  width: { min: 1280, max: 3840, default: 1920 },
+  height: { min: 720, max: 3840, default: 1920 },
+  bitrateKbps: { min: 500, max: 8000, default: 4000 },
+} as const;
+
+/** Frame-rate presets of a support session. */
+export const SUPPORT_FPS_PRESETS: readonly number[] = [15, 20, 30];
+
+export const SUPPORT_VIDEO: Readonly<VideoSettings> = {
+  fps: SUPPORT_VIDEO_LIMITS.fps.default,
+  maxWidth: SUPPORT_VIDEO_LIMITS.width.default,
+  maxHeight: SUPPORT_VIDEO_LIMITS.height.default,
+  bitrateKbps: SUPPORT_VIDEO_LIMITS.bitrateKbps.default,
+  contentHint: 'text',
+};
+
+/** Support video settings from any stored object: clamped into their ranges, missing ones defaulted. */
+export function cleanSupportVideo(input: unknown): VideoSettings {
+  const o = (typeof input === 'object' && input !== null ? input : {}) as Record<string, unknown>;
+  const L = SUPPORT_VIDEO_LIMITS;
+  const hint = o.contentHint;
+  return {
+    fps: clamp(o.fps, L.fps.min, L.fps.max, L.fps.default),
+    maxWidth: Math.round(clamp(o.maxWidth, L.width.min, L.width.max, L.width.default)),
+    maxHeight: Math.round(clamp(o.maxHeight, L.height.min, L.height.max, L.height.default)),
+    bitrateKbps: Math.round(
+      clamp(o.bitrateKbps, L.bitrateKbps.min, L.bitrateKbps.max, L.bitrateKbps.default),
+    ),
+    contentHint:
+      hint === 'text' || hint === 'motion' || hint === 'detail' ? hint : SUPPORT_VIDEO.contentHint,
+  };
+}
+
+/**
+ * The safety code of a link (DESIGN 7.3 R5): six digits, `"482 913"`, from the two DTLS
+ * fingerprints of the link. The order does not matter, so both ends compute the same code;
+ * someone in the middle has other fingerprints on each leg, so the codes differ.
+ * @throws {Error} when a fingerprint is empty
+ */
+export async function safetyCode(a: string, b: string): Promise<string> {
+  if (!a || !b) {
+    throw new Error('a safety code needs both fingerprints');
+  }
+  const [x, y] = [a.toUpperCase(), b.toUpperCase()].sort();
+  const digest = await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(`inksplat-safety-code\n${x}\n${y}`),
+  );
+  const n = new DataView(digest).getUint32(0) % 1_000_000;
+  const digits = String(n).padStart(6, '0');
+  return `${digits.slice(0, 3)} ${digits.slice(3)}`;
 }

@@ -1,0 +1,84 @@
+{
+  "$schema": "../node_modules/app-builder-lib/scheme.json",
+  "appId": "com.binarydicegames.inksplat.support",
+  "productName": "inksplat Support",
+  "copyright": "Copyright \u00a9 2026 Binary Dice Games",
+  "directories": {
+    "output": "release"
+  },
+  "files": ["dist/**", "package.json", "!**/node_modules/**"],
+  "extraMetadata": {
+    "main": "dist/main.js",
+    "dependencies": {}
+  },
+  "asar": true,
+  "protocols": [
+    {
+      "name": "inksplat Support link",
+      "schemes": ["inksplat-support"]
+    }
+  ],
+  "electronFuses": {
+    "runAsNode": false,
+    "enableCookieEncryption": true,
+    "enableNodeOptionsEnvironmentVariable": false,
+    "enableNodeCliInspectArguments": false,
+    "enableEmbeddedAsarIntegrityValidation": true,
+    "onlyLoadAppFromAsar": true,
+    "loadBrowserProcessSpecificV8Snapshot": false,
+    "grantFileProtocolExtraPrivileges": false
+  },
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "binary-dice-games",
+      "repo": "inksplat"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64", "arm64"]
+      }
+    ],
+    "artifactName": "inksplat-Support-Setup.${ext}",
+    "signtoolOptions": {
+      "publisherName": ["Binary Dice Games"]
+    },
+    "verifyUpdateCodeSignature": true
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": false,
+    "allowElevation": false,
+    "runAfterFinish": false,
+    "deleteAppDataOnUninstall": true
+  },
+  "mac": {
+    "target": [
+      {
+        "target": "dmg",
+        "arch": ["universal"]
+      }
+    ],
+    "artifactName": "inksplat-Support.${ext}",
+    "category": "public.app-category.utilities",
+    "hardenedRuntime": true,
+    "gatekeeperAssess": false,
+    "entitlements": "build/entitlements.mac.plist",
+    "entitlementsInherit": "build/entitlements.mac.plist",
+    "extendInfo": {
+      "NSScreenCaptureUsageDescription": "The person helping you sees your screen only after you allow it, until you press Stop."
+    }
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "artifactName": "inksplat-Support.${ext}",
+    "category": "Utility",
+    "maintainer": "Binary Dice Games",
+    "synopsis": "Let someone see your screen and point at it, for remote support."
+  },
+  "npmRebuild": false,
+  "electronVersion": "44.9.3"
+}

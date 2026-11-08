@@ -53,8 +53,14 @@
     };
   }
 
+  // `cert`: one DTLS certificate for every link (a support session's host, spec/08 section 5.4).
+  const certificates =
+    q.get('cert') === '1'
+      ? [await RTCPeerConnection.generateCertificate({ name: 'ECDSA', namedCurve: 'P-256' })]
+      : undefined;
   const session = await createSession({
     role,
+    certificates,
     token: q.get('token') ?? undefined,
     peerId: q.get('id') ?? undefined,
     me: { name: q.get('id') ?? role, color: '#3e63dd' },

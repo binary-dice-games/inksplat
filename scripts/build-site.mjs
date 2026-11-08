@@ -61,6 +61,9 @@ export async function buildSite(out, { base = '/', archive = join(root, 'site-ar
   // Its presenter page goes with it: both sides of a link then speak the same protocol.
   copyFileSync(join(out, 'present.html'), join(out, versionDir, 'present.html'));
   copyFileSync(join(out, 'present.js'), join(out, versionDir, 'present.js'));
+  // The support landing page goes with them (spec/08_remote_support).
+  copyFileSync(join(out, 'support.html'), join(out, versionDir, 'support.html'));
+  copyFileSync(join(out, 'support.js'), join(out, versionDir, 'support.js'));
   copyFileSync(
     join(out, 'still-refresh-worker.js'),
     join(out, versionDir, 'still-refresh-worker.js'),

@@ -43,6 +43,7 @@ describe('static presenter page', () => {
     expect(await page.locator('#start button').allTextContents()).toEqual([
       'Start session',
       'Settings…',
+      'Start a support session',
     ]);
     const ctx = await site.context();
     const landing = await ctx.newPage();
@@ -1002,6 +1003,47 @@ describe('static presenter page', () => {
     await expect.poll(async () => (await stickers()).length).toBe(3);
   });
 
+  it('starts a support session: the support link, the pointer alone, no board controls', async () => {
+    const page = await presenterPage();
+    await configure(page);
+    await page.locator('#startSupport').click();
+    await page.locator('#app').waitFor({ state: 'visible', timeout: 30000 });
+    await expect.poll(() => page.locator('#link').inputValue()).toMatch(/support\.html#inksplat=/);
+    const link = await page.locator('#link').inputValue();
+    expect(link.startsWith(`${site.origin}/support.html#inksplat=`)).toBe(true);
+    expect(await page.locator('#supportText').inputValue()).toContain(link);
+    await expect
+      .poll(() => page.locator('#supportStatus').textContent())
+      .toMatch(/Waiting for the person/);
+    for (const hidden of ['#share', '#newLink', '#streams', '#background', '#drawing', '#lock']) {
+      expect(await page.locator(hidden).isVisible(), hidden).toBe(false);
+    }
+    // The toolbar has the pointer only, and no canvas buttons.
+    const tools = page.locator('collab-whiteboard .toolbar button[aria-label]');
+    await expect
+      .poll(() => page.locator('collab-whiteboard button[aria-label="Pen"]').count())
+      .toBe(0);
+    expect(await tools.count()).toBeGreaterThan(0);
+    expect(await page.locator('collab-whiteboard button[aria-label^="Pointer"]').count()).toBe(1);
+    expect(await page.locator('#notice').textContent()).toMatch(/send the link/);
+
+    // The person opens the link: the landing page offers the app with the same invite.
+    const landing = await (
+      await site.context({ userAgent: 'Mozilla/5.0 (Windows NT 10.0)' })
+    ).newPage();
+    await landing.goto(link);
+    const open = landing.locator('#open');
+    await expect.poll(() => open.isVisible()).toBe(true);
+    const token = new URL(link).hash.match(/inksplat=([^&]+)/)![1];
+    expect(await open.getAttribute('href')).toMatch(
+      new RegExp(`^inksplat-support://join#inksplat=${token}&tr=`),
+    );
+    expect(await landing.locator('#download').getAttribute('href')).toMatch(/\.exe$/);
+    await landing.goto(`${site.origin}/support.html#inksplat=bad`);
+    await expect.poll(() => landing.locator('#bad').isVisible()).toBe(true);
+    expect(await landing.locator('#open').isVisible()).toBe(false);
+  });
+
   it('remembers the settings', async () => {
     const presenter = await presenterPage();
     await configure(presenter);
@@ -1130,14 +1172,14 @@ describe('static presenter page', () => {
     await presenter.locator('#openSettings').click();
     const overflow = () =>
       presenter.locator('#settings').evaluate((d) => d.scrollHeight - d.clientHeight);
-    for (const tab of ['general', 'video', 'connection']) {
+    for (const tab of ['general', 'video', 'connection', 'support']) {
       await presenter.locator(`#tab-${tab}`).click();
       await expect.poll(() => presenter.locator(`#pane-${tab}`).isVisible()).toBe(true);
       expect(await overflow(), tab).toBeLessThanOrEqual(0);
     }
     // Only the chosen section shows, and the arrow keys move between them.
     expect(await presenter.locator('#pane-general').isVisible()).toBe(false);
-    await presenter.locator('#tab-connection').focus();
+    await presenter.locator('#tab-support').focus();
     await presenter.keyboard.press('ArrowRight');
     await expect.poll(() => presenter.locator('#pane-general').isVisible()).toBe(true);
     // Reopening starts on the first section; a phone-sized window still fits.
@@ -1147,6 +1189,9 @@ describe('static presenter page', () => {
     await expect.poll(() => presenter.locator('#pane-general').isVisible()).toBe(true);
     await presenter.locator('#tab-video').click();
     expect(await overflow()).toBeLessThanOrEqual(0);
+    // The four tabs fit side by side.
+    const tabs = presenter.locator('#settings [role=tablist]');
+    expect(await tabs.evaluate((t) => t.scrollWidth - t.clientWidth)).toBeLessThanOrEqual(0);
   });
 
   it('warns when a whole screen is shared', async () => {

@@ -416,6 +416,11 @@ export interface WhiteboardOptions {
   toolHintMs?: number;
   /** This person's avatar (an image data URL), shown on their cursor instead of their name. */
   avatar?: string;
+  /**
+   * Draw this person's own laser trails, pings and emotes here; default true. False sends them
+   * without drawing them (a support session shows them in the video instead).
+   */
+  localMarks?: boolean;
   /** Show the speaking queue; default true. */
   turns?: boolean;
   /** Replaces {@link prepareFile} (tests, or a host with better previews). */

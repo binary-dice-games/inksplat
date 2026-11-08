@@ -53,9 +53,9 @@ function protocol() {
 }
 
 /**
- * Builds the viewer page and the presenter page (`index.html`, `viewer.js`,
- * `present.html`, `present.js`, the worker `still-refresh-worker.js`) with their
- * images (`ASSET_FILES`).
+ * Builds the viewer page, the presenter page and the support landing page (`index.html`,
+ * `viewer.js`, `present.html`, `present.js`, `support.html`, `support.js`, the worker
+ * `still-refresh-worker.js`) with their images (`ASSET_FILES`).
  * @param {string} out directory to write into
  */
 export async function buildViewer(out) {
@@ -64,6 +64,8 @@ export async function buildViewer(out) {
     entryPoints: [
       { in: join(src, 'main.ts'), out: 'viewer' },
       { in: join(src, 'present.ts'), out: 'present' },
+      // The landing page of a support link (spec/08_remote_support), which opens the app.
+      { in: join(src, 'support.ts'), out: 'support' },
       // The still refresh's worker (viewer/src/still-refresh.ts), loaded next to the pages.
       { in: join(src, 'still-refresh-worker.ts'), out: 'still-refresh-worker' },
     ],
@@ -98,11 +100,13 @@ export async function buildViewer(out) {
   if (!style) {
     throw new Error('viewer/src/index.html has no <style> block');
   }
-  const page = readFileSync(join(src, 'present.html'), 'utf8');
-  writeFileSync(
-    join(out, 'present.html'),
-    page.replace('<!--{{style}}-->', () => style),
-  );
+  for (const name of ['present.html', 'support.html']) {
+    const page = readFileSync(join(src, name), 'utf8');
+    writeFileSync(
+      join(out, name),
+      page.replace('<!--{{style}}-->', () => style),
+    );
+  }
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { createMemoryNetwork, createSession } from '@inksplat/collab-session';
 import type { Session } from '@inksplat/collab-session';
 import { WhiteboardModel } from '@inksplat/collab-whiteboard';
-import { PROTOCOL, cleanStage } from '@inksplat/defaults';
+import { PROTOCOL, SUPPORT_VIDEO, cleanStage, safetyCode } from '@inksplat/defaults';
 import type { Stage } from '@inksplat/defaults';
 import { ShareHost } from '../../viewer/src/share-host';
 import { DEFAULT_SETTINGS } from '../../viewer/src/settings';
@@ -328,5 +328,175 @@ describe('ShareHost', () => {
     await until(() => stages.at(-1)?.state === 'ended', 'ended');
     expect(host.ui().phase).toBe('idle');
     host.stop(); // idempotent
+  });
+});
+
+describe('ShareHost in a support session (spec/08_remote_support)', () => {
+  const network = createMemoryNetwork();
+  const opened: { stop(): void }[] = [];
+  const guests: Session[] = [];
+  const offer = {
+    cmd: 'offer',
+    surface: 'monitor',
+    w: 1280,
+    h: 800,
+    client: 'support',
+    v: '0.1.0',
+  };
+
+  afterEach(() => {
+    opened.splice(0).forEach((h) => h.stop());
+    guests.splice(0).forEach((g) => g.close());
+  });
+
+  async function start(): Promise<ShareHost> {
+    const host = await ShareHost.start({
+      settings: {
+        ...DEFAULT_SETTINGS,
+        name: 'Ana',
+        viewerBase: 'https://example.github.io/inksplat/',
+      },
+      rendezvous: [{ kind: 'memory', network }],
+      mode: 'support',
+    });
+    opened.push(host);
+    return host;
+  }
+
+  async function connect(host: ShareHost, name: string): Promise<Session> {
+    const guest = await createSession({
+      role: 'guest',
+      token: host.session.token,
+      protocol: PROTOCOL,
+      me: { name, color: '#30a46c' },
+      rendezvous: [{ kind: 'memory', network }],
+      reconnectMs: 0,
+    });
+    guests.push(guest);
+    return guest;
+  }
+
+  async function join(host: ShareHost, name: string): Promise<{ guest: Session; stages: Stage[] }> {
+    const guest = await connect(host, name);
+    const stages: Stage[] = [];
+    guest.channel('stage').on('message', (m) => {
+      const stage = cleanStage(m);
+      if (stage) stages.push(stage);
+    });
+    await until(() => guest.host(), 'guest reached the host');
+    return { guest, stages };
+  }
+
+  function asks(host: ShareHost): unknown[] {
+    const asked: unknown[] = [];
+    const s = host.session;
+    const uplinkParams = s.uplinkParams.bind(s);
+    s.uplinkParams = (id, p) => {
+      asked.push(p);
+      uplinkParams(id, p);
+    };
+    return asked;
+  }
+
+  it('gives the support link and starts waiting, with drawing off', async () => {
+    const host = await start();
+    expect(host.link()).toBe(
+      `https://example.github.io/inksplat/support.html#inksplat=${host.session.token}`,
+    );
+    expect(host.ui()).toMatchObject({
+      mode: 'support',
+      drawing: false,
+      support: { status: 'waiting', person: null, code: null },
+    });
+    expect(host.stage()).toMatchObject({ mode: 'support', drawing: false });
+  });
+
+  it("shows the person's screen at once, with the display's aspect and the support video", async () => {
+    const host = await start();
+    const asked = asks(host);
+    const { guest, stages } = await join(host, 'Bob');
+    await until(() => host.ui().support?.status === 'deciding', 'deciding');
+    expect(host.session.locked).toBe(true);
+    guest.channel('screen').send(offer, { to: guest.host()!.id });
+    await until(() => host.ui().support?.status === 'sharing', 'sharing');
+    expect(host.ui().active).toBe(guest.me.id);
+    expect(host.ui().support).toMatchObject({ person: { name: 'Bob' }, version: '0.1.0' });
+    expect(asked.at(-1)).toMatchObject({
+      active: true,
+      fps: SUPPORT_VIDEO.fps,
+      maxBitrate: SUPPORT_VIDEO.bitrateKbps * 1000,
+      contentHint: 'text',
+      degradationPreference: 'balanced',
+    });
+    await until(() => stages.at(-1)?.screen?.owner === guest.me.id, 'stage');
+    expect(stages.at(-1)).toMatchObject({ mode: 'support', aspect: 1280 / 800, w: 1280, h: 800 });
+  });
+
+  it('lets nobody else in while the person is connected, and lets them back after they leave', async () => {
+    const host = await start();
+    const bob = await join(host, 'Bob');
+    await until(() => host.session.locked, 'locked');
+    const intruder = await connect(host, 'Eve');
+    await until(() => intruder.state === 'ended', 'refused');
+    expect(host.ui().support?.person?.name).toBe('Bob');
+
+    bob.guest.channel('screen').send(offer, { to: bob.guest.host()!.id });
+    await until(() => host.ui().support?.status === 'sharing', 'sharing');
+    bob.guest.close();
+    await until(() => host.ui().support?.status === 'waiting', 'waiting');
+    expect(host.ui().support?.left).toBe('Bob');
+    expect(host.session.locked).toBe(false);
+    expect(host.ui().active).toBeNull();
+
+    await join(host, 'Bob');
+    await until(() => host.ui().support?.status === 'deciding', 'back');
+    expect(host.ui().support?.left).toBeNull();
+  });
+
+  it('removes a second person who got in at the same moment', async () => {
+    const host = await start();
+    host.session.lock = () => {}; // both joins race past the lock
+    const a = await join(host, 'Bob');
+    const b = await join(host, 'Eve');
+    await until(() => b.guest.state === 'ended', 'second removed');
+    expect(a.guest.state).toBe('open');
+    expect(host.ui().support?.person?.name).toBe('Bob');
+  });
+
+  it("refuses the person's drawing but lets the helper's marks through", async () => {
+    const host = await start();
+    const inbox: unknown[] = [];
+    host.session.channel('wb').on('message', (m) => inbox.push(m));
+    const { guest } = await join(host, 'Bob');
+    const model = new WhiteboardModel(guest.me.id);
+    guest.channel('wb').send({ t: 'op', op: model.add(stroke) });
+    guest.channel('wb').send({ t: 'cur', x: 1, y: 2 });
+    await until(() => inbox.length > 0, 'cursor');
+    await settle(50);
+    expect(inbox).toEqual([{ t: 'cur', x: 1, y: 2 }]);
+  });
+
+  it('refuses what only an ordinary session has', async () => {
+    const host = await start();
+    for (const command of [
+      { cmd: 'newLink' },
+      { cmd: 'drawing', on: true },
+      { cmd: 'background', page: 0, name: 'cork' },
+      { cmd: 'clear' },
+      { cmd: 'show', id: null },
+      { cmd: 'lock', on: false },
+    ] as const) {
+      await expect(host.command(command)).rejects.toThrow(/support/);
+    }
+    expect(() => host.setOwnStream({} as MediaStream)).toThrow(/support/);
+  });
+
+  it('works out the safety code of the link to the person', async () => {
+    const host = await start();
+    host.session.fingerprints = () => ({ local: 'AA:BB', remote: 'CC:DD' });
+    await join(host, 'Bob');
+    const code = await safetyCode('CC:DD', 'AA:BB');
+    await until(() => host.ui().support?.code === code, 'code');
+    expect(code).toMatch(/^\d{3} \d{3}$/);
   });
 });

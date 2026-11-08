@@ -1,0 +1,72 @@
+# MIT License © 2026 Binary Dice Games
+# Releases inksplat Support (spec/08_remote_support/DESIGN.md section 6.3): on a `support-v*`
+# tag, builds and tests the app on each system, signs it where the signing secrets are set, and
+# attaches the installers to a draft GitHub release of the tag. The signing secrets live in the
+# protected `support-release` environment, which needs a second maintainer's approval
+# (DESIGN 7.3 R11). A maintainer reviews the draft and publishes it; the app's updater and the
+# landing page take the latest published release.
+name: support-release
+
+on:
+  push:
+    tags: ['support-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { name: linux, runner: ubuntu-24.04, args: --linux }
+          - { name: macos, runner: macos-15, args: --mac }
+          - { name: windows, runner: windows-latest, args: --win }
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    environment: support-release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Check the tag matches the app's version
+        shell: bash
+        run: |
+          version=$(node -p "require('./support-app/package.json').version")
+          test "${GITHUB_REF_NAME}" = "support-v${version}" || {
+            echo "tag ${GITHUB_REF_NAME} does not match support-app version ${version}"; exit 1; }
+      - run: npm run check
+      - run: npx vitest run --project unit
+      - name: Signing
+        shell: bash
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+        run: |
+          if [ -z "$CSC_LINK" ]; then
+            echo "::warning::No signing certificate: the installers are not signed."
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
+          fi
+          if [ "${{ matrix.name }}" = macos ] && [ -n "$APPLE_ID" ]; then
+            echo "NOTARIZE=-c.mac.notarize=true" >> "$GITHUB_ENV"
+          fi
+      - name: Package and attach to the draft release
+        working-directory: support-app
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node scripts/build.mjs
+          npx electron-builder --config electron-builder.json ${{ matrix.args }} \
+            --publish always -c.publish.0.releaseType=draft ${NOTARIZE:-}

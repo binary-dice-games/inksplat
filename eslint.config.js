@@ -14,6 +14,8 @@ export default tseslint.config(
       'site-archive/',
       'release/',
       'spikes/',
+      'support-app/dist/',
+      'support-app/release/',
       'packages/collab-session/collab-session.js',
       'packages/collab-whiteboard/collab-whiteboard.js',
     ],
@@ -37,7 +39,7 @@ export default tseslint.config(
     languageOptions: { globals: { document: 'readonly', location: 'readonly' } },
   },
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.mjs', 'support-app/scripts/**/*.mjs'],
     languageOptions: {
       globals: {
         process: 'readonly',
