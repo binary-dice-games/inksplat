@@ -30,9 +30,13 @@ auto-active offer, aspect from the offer, guest locked to pointer-only, unlock o
 support video settings (DESIGN 4.3: `SUPPORT_VIDEO`, `cleanSupportVideo`,
 `supportVideo` in the presenter settings, sent with `uplinkParams`, which gains
 `degradationPreference` in `collab-session`); whiteboard `localMarks` option (header
-records the change)); presenter page passes `localMarks: false`; TSDoc.
+records the change)); `collab-session`: optional `certificates` option and each link's DTLS
+fingerprints (DESIGN 5.4; header records the change); `safetyCode(fingerprints)` in
+`packages/defaults`; presenter page passes `localMarks: false`; TSDoc.
 **Tests:** `tests/unit/defaults.test.ts` (stage `mode` cleaning, offer with `client`/`v`,
-`supportLink`, `cleanSupportVideo` bounds and defaults);
+`supportLink`, `cleanSupportVideo` bounds and defaults, `safetyCode` is order-independent and
+six digits); `tests/e2e/streams.test.ts` (with `certificates` the host's fingerprint is the
+same on every link, and both sides compute the same code);
 `tests/unit/present-settings.test.ts` (`supportVideo` kept apart from the ordinary video
 settings); `tests/unit/share-host.test.ts` (support mode: first
 offer active, aspect, second guest refused or removed, guest drawing refused, unlock and rejoin,
@@ -43,7 +47,8 @@ not drawn locally; remote marks still drawn) in `tests/unit/whiteboard-pointer-m
 ## 3. Presenter page support mode and landing page
 
 **Goal:** the helper's UI (DESIGN 3.1) and `support.html` (DESIGN 3.2).
-**Deliverables:** **Start a support session** on the start page; status line; toolbar with the
+**Deliverables:** **Start a support session** on the start page; status line with the safety
+code; toolbar with the
 pointer only; hidden canvas buttons, Screen list, share button and **New link**; the text to
 paste; `support.html`/`support.ts` (open button, downloads by system, steps); site build and
 smoke check include it.
@@ -83,7 +88,28 @@ stage aspect; a laser mark drawn on the overlay reaches the helper's video while
 helper's board draws none of its own. Unit: frame-to-display mapping with scale factors.
 **Result:** _pending_
 
-## 6. Packaging, CI and release
+## 6. Security hardening and review
+
+**Goal:** the invariants and mitigations of DESIGN section 7 in place and checked, before
+anything is packaged for people.
+**Deliverables:** `support-app/src/main/consent.ts` (state machine, native dialog, 3-second
+delay, drive-by limit, 60-minute check, lock and sleep, pinned fingerprint, safety code in the
+dialog); IPC sender checks; permission handlers; the `wb` allowlist; the window watchdog
+(I2); start-up refusal of debugging switches; build-date expiry; fuses and macOS entitlements
+in the builder config; protocol registration with `--`. A review note appended here: Electron's
+security checklist item by item, a static scan of the app, and DESIGN section 7 re-read
+against the code, with each finding fixed or recorded as accepted.
+**Tests:** `tests/e2e/support-security.test.ts` (Playwright `_electron`): every invariant test
+of DESIGN 7.5 (no capture before consent; bar or overlay closed, hidden or crashed ends the
+capture; Stop offline; host requests for audio, another display or a new capture change
+nothing; lock and suspend end consent; another host fingerprint asks again; three refusals
+block links for 10 minutes). Unit: `tests/unit/support-consent.test.ts` (state machine
+transitions and timers with a fake clock), `tests/unit/support-allowlist.test.ts` and
+`tests/unit/support-link.test.ts` extended with malformed, oversized and switch-injection
+input; IPC handlers refuse calls from the wrong window.
+**Result:** _pending_
+
+## 7. Packaging, CI and release
 
 **Goal:** installers for Windows, macOS and Linux, built in CI, published on a tag, with
 updates (DESIGN 6.3).
@@ -93,11 +119,13 @@ systems; `.github/workflows/support-release.yml` on `support-v*` tags with signi
 (skipped with a warning when absent); `electron-updater` wired; landing page links to the fixed
 release file names.
 **Tests:** CI green on the three systems; a release dry run on a test tag produces the five
-installers; `tests/unit/support-build.test.ts` checks the builder config (protocol, fuses,
+installers; a packaging check reads the fuses, the macOS entitlements and hardened runtime and
+the protocol registration of each installer and fails on any difference from DESIGN 4.1; the
+updater refuses a build signed by another key (test certificate); `tests/unit/support-build.test.ts` checks the builder config (protocol, fuses,
 file names that the landing page links to).
 **Result:** _pending_
 
-## 7. Docs and manual checks
+## 8. Docs and manual checks
 
 **Goal:** the feature documented and checked on real machines.
 **Deliverables:** `docs/support-app.md` (build, run, package, sign; README "Further
@@ -118,5 +146,7 @@ page section for the person helped; CHANGELOG; `spec/INDEX.md` status.
   put them, and never take the person's clicks.
 - The helper sees each mark once, in the video; the helper's board draws none of its own.
 - Only one person can join a support session; ordinary sessions are unchanged.
+- Every invariant of DESIGN section 7.1 has a passing test in CI, the packaging checks pass, and
+  the security review of step 6 is recorded with no open finding above low.
 - All tests above pass in CI on Linux, macOS and Windows; the manual checklist is done on the
   three systems.
