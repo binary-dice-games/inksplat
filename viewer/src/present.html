@@ -457,6 +457,33 @@
         .grid {
           grid-template-columns: 1fr;
         }
+        .tabs button {
+          padding: 6px 8px;
+        }
+      }
+      /* A support session (spec/08_remote_support): only what helping one person needs. */
+      #app.support .board-only,
+      #app:not(.support) .support-only {
+        display: none !important;
+      }
+      #supportCode {
+        font:
+          600 28px/1.2 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          monospace;
+        letter-spacing: 0.08em;
+        margin: 4px 0;
+      }
+      #supportText {
+        width: 100%;
+        resize: vertical;
+      }
+      .start-support {
+        margin-top: 18px;
+        padding-top: 14px;
+        border-top: 1px solid var(--border);
       }
     </style>
   </head>
@@ -483,6 +510,17 @@
           You draw on a copy of what you share, in this window, so keep this window next to it:
           anything drawn on the shared screen itself would not reach the others.
         </p>
+        <div class="start-support">
+          <h2>Help someone with their computer</h2>
+          <p class="muted">
+            Send one person a link. They install the small inksplat Support app once, allow you to
+            see their screen, and see your pointer, laser and emotes on their own screen. You can
+            only look and point: you cannot click or type on their computer.
+          </p>
+          <p class="row">
+            <button id="startSupport" type="button">Start a support session</button>
+          </p>
+        </div>
       </form>
     </main>
 
@@ -504,8 +542,10 @@
         <div id="notice" role="status"></div>
       </div>
       <div id="bar">
-        <span id="shareStatus" role="status"></span>
-        <button id="share" type="button" aria-pressed="false">Share screen</button>
+        <span id="shareStatus" class="board-only" role="status"></span>
+        <button id="share" class="board-only" type="button" aria-pressed="false">
+          Share screen
+        </button>
         <button id="people" type="button" aria-controls="panel"></button>
         <button id="fullscreen" type="button">Full screen</button>
         <button id="toolsToggle" type="button" aria-pressed="true">Tools</button>
@@ -528,6 +568,17 @@
           </button>
         </header>
         <p id="warning" role="status"></p>
+        <section class="group support-only" aria-labelledby="supportTitle">
+          <h3 id="supportTitle">Support</h3>
+          <p id="supportStatus" role="status"></p>
+          <div id="supportCodeBox" hidden>
+            <p class="muted" id="supportCodeHint"></p>
+            <p id="supportCode"></p>
+          </div>
+          <label for="supportText" class="muted">Text to send with the link</label>
+          <textarea id="supportText" rows="5" readonly></textarea>
+          <button id="copySupportText" type="button">Copy text and link</button>
+        </section>
         <section class="group" aria-labelledby="inviteTitle">
           <h3 id="inviteTitle">Invite</h3>
           <label for="link" class="visually-hidden">Viewer link</label>
@@ -536,27 +587,27 @@
             <button id="copyLink" class="primary" type="button">Copy</button>
           </div>
           <div class="pair">
-            <button id="newLink" type="button">New link</button>
+            <button id="newLink" class="board-only" type="button">New link</button>
             <button id="showQr" type="button">QR code</button>
           </div>
         </section>
         <section class="group" aria-labelledby="peopleTitle">
           <h3 id="peopleTitle">People</h3>
           <ul id="viewers" aria-label="Viewers"></ul>
-          <label class="switch"
+          <label class="switch board-only"
             ><span>Viewers can draw</span><input id="drawing" type="checkbox"
           /></label>
-          <label class="switch"
+          <label class="switch board-only"
             ><span>Lock: no new viewers</span><input id="lock" type="checkbox"
           /></label>
         </section>
-        <section class="group" aria-labelledby="screenTitle">
+        <section class="group board-only" aria-labelledby="screenTitle">
           <h3 id="screenTitle">Screen</h3>
           <ul id="streams" aria-label="Streams on offer"></ul>
           <video id="previewVideo" muted autoplay playsinline hidden aria-label="Preview"></video>
           <button id="screenHere" type="button" hidden>Show the screen on this canvas</button>
         </section>
-        <section class="group" aria-labelledby="boardTitle">
+        <section class="group board-only" aria-labelledby="boardTitle">
           <h3 id="boardTitle">Board</h3>
           <div id="backgroundRow" class="field">
             <label id="backgroundLabel" for="background">Background of canvas 1</label>
@@ -576,7 +627,7 @@
             <input id="openFile" type="file" accept=".zip,application/zip" hidden />
           </div>
         </section>
-        <details class="group">
+        <details class="group board-only">
           <summary>Join codes</summary>
           <p class="muted">
             For a viewer whose network blocks the trackers: paste their code, send back the answer.
@@ -680,6 +731,16 @@
           >
             Connection
           </button>
+          <button
+            id="tab-support"
+            type="button"
+            role="tab"
+            aria-selected="false"
+            aria-controls="pane-support"
+            tabindex="-1"
+          >
+            Support
+          </button>
         </div>
 
         <div id="pane-general" class="pane" role="tabpanel" aria-labelledby="tab-general">
@@ -760,6 +821,36 @@
               Applies from the next session.
             </p>
           </div>
+        </div>
+
+        <div id="pane-support" class="pane" role="tabpanel" aria-labelledby="tab-support" hidden>
+          <p class="hint">
+            The video of a support session, where one person shares their screen with you.
+          </p>
+          <div class="grid">
+            <div class="field">
+              <label for="supportFps">Frames per second</label>
+              <select id="supportFps">
+                <option value="15">15</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="supportBitrateKbps">Bitrate (kbit/s)</label>
+              <input id="supportBitrateKbps" type="number" min="500" max="8000" step="50" />
+            </div>
+            <div class="field">
+              <label for="supportMaxWidth">Largest width (px)</label>
+              <input id="supportMaxWidth" type="number" min="1280" max="3840" step="1" />
+            </div>
+            <div class="field">
+              <label for="supportMaxHeight">Largest height (px)</label>
+              <input id="supportMaxHeight" type="number" min="720" max="3840" step="1" />
+            </div>
+          </div>
+          <p class="hint">One person, so a fluid video: 15 to 30 frames per second.</p>
+          <p class="hint">Changes here apply to a running support session at once.</p>
         </div>
 
         <div class="actions">

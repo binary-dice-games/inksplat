@@ -37,6 +37,7 @@ inksplat_add_test(present_settings tests/unit/present-settings.test.ts)
 inksplat_add_test(site_build tests/unit/site-build.test.ts)
 inksplat_add_test(still_refresh tests/unit/still-refresh.test.ts)
 inksplat_add_test(codec_choice tests/unit/codec-choice.test.ts)
+inksplat_add_test(support_page tests/unit/support-page.test.ts)
 
 # Browser tests need Chrome (INKSPLAT_CHROME), see docs/building.md.
 inksplat_add_test(webrtc tests/e2e/webrtc.test.ts PROJECT e2e)

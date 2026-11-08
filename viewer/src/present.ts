@@ -3,7 +3,8 @@
  * @file The presenter page (spec/06_static_presenter, spec/07_participant_streaming): it starts
  * the session and is host and console at once. Anybody, the presenter too, can share a tab, a
  * window or a screen at any time; the presenter picks the stream on the screen background from
- * the streams on offer. The whiteboard is mounted on the host session.
+ * the streams on offer. The whiteboard is mounted on the host session. A support session
+ * (spec/08_remote_support) helps one person: their screen, the pointer, laser and emotes only.
  */
 import { SessionError } from '@inksplat/collab-session';
 import {
@@ -22,10 +23,17 @@ import {
 } from './settings';
 import type { Settings } from './settings';
 import { ShareHost } from './share-host';
-import type { StreamInfo, UiState } from './share-host';
+import type { SessionMode, StreamInfo, UiState } from './share-host';
 import { UPLINK_WARNING_KBPS, canvasBackground, uplinkKbps } from '@inksplat/defaults';
 import { fitScale, surfaceWarning } from './display-capture';
-import { boardAspect, errorMessage } from './model';
+import {
+  boardAspect,
+  errorMessage,
+  supportCodeHint,
+  supportInvitation,
+  supportNotice,
+  supportStatusText,
+} from './model';
 import { ownerStatus, playIn as play, statusText, wireShareButton } from './share-button';
 import type { ShareButton } from './share-button';
 import { setToolbarFolded } from './fold';
@@ -201,9 +209,9 @@ function renderStreams(ui: UiState): void {
     return li;
   };
   $('streams').replaceChildren(...ui.streams.map(row), row(null));
-  // A new offer from a guest: say so.
+  // A new offer from a guest: say so (a support session shows it at once).
   for (const s of ui.streams) {
-    if (!s.own && !offered.has(s.id)) {
+    if (ui.mode === 'board' && !s.own && !offered.has(s.id)) {
       toast(`${s.name || 'A viewer'} offers a screen: Preview or Show it under Screen.`);
     }
   }
@@ -222,7 +230,10 @@ function render(): void {
   }
   const ui = host.ui();
   const n = ui.viewers.length;
-  $('people').textContent = `${n} ${n === 1 ? 'viewer' : 'viewers'}`;
+  $('people').textContent =
+    ui.mode === 'support'
+      ? (ui.support?.person?.name ?? 'Nobody yet')
+      : `${n} ${n === 1 ? 'viewer' : 'viewers'}`;
   const own = share?.capture();
   const warning = own ? surfaceWarning(own.surface) : null;
   $('warning').textContent = [problemText(ui.problem), warning].filter(Boolean).join(' ');
@@ -233,7 +244,12 @@ function render(): void {
   $<HTMLSelectElement>('background').value = ui.backgrounds[canvas()] ?? 'whiteboard';
   play(video(), host.streamOf(ui.active));
   const onScreen = canvasBackground(host.stage(), canvas()) === 'screen';
-  $('notice').textContent = onScreen && ui.active === null ? 'Nothing is being shared' : '';
+  $('notice').textContent = ui.support
+    ? (supportNotice(ui.support) ?? '')
+    : onScreen && ui.active === null
+      ? 'Nothing is being shared'
+      : '';
+  renderSupport(ui);
   $('shareStatus').textContent = statusText(
     ownerStatus(host.stage(), host.session.me.id, share?.capture() != null),
     true,
@@ -260,6 +276,23 @@ function render(): void {
   );
 }
 
+/** The Support section of a support session: status, safety code, text to send. */
+function renderSupport(ui: UiState): void {
+  const s = ui.support;
+  if (!s) {
+    return;
+  }
+  $('supportStatus').textContent = supportStatusText(s);
+  $('supportCodeBox').hidden = !s.code;
+  $('supportCode').textContent = s.code ?? '';
+  $('supportCodeHint').textContent = supportCodeHint(s);
+  const text = $<HTMLTextAreaElement>('supportText');
+  const invitation = ui.link ? supportInvitation(ui.link) : '';
+  if (text.value !== invitation) {
+    text.value = invitation;
+  }
+}
+
 function enterApp(): void {
   if (!host) {
     return;
@@ -267,6 +300,8 @@ function enterApp(): void {
   show('app');
   const stageEl = $('stage');
   const h = host;
+  const support = h.mode === 'support';
+  $('app').classList.toggle('support', support);
   offered = new Set();
   adapter = frameAdapter(stageEl, () => boardAspect(h.stage()), $('zoom'));
   unlayer = layerWhileMoving($('zoom'), adapter);
@@ -277,6 +312,9 @@ function enterApp(): void {
     avatar: settings?.avatar,
     filePreview,
     toolHints: prefs.toolHints,
+    // Support: the pointer (cursor, laser, emotes) on canvas 1 only. The person's app draws the
+    // marks on their screen and they come back in the video, so they are not drawn here too.
+    ...(support ? { tools: ['pointer'], pages: false, turns: false, localMarks: false } : {}),
   });
   board.on('error', (e) => toast(e.message));
   board.on('page', render);
@@ -310,8 +348,11 @@ function endSession(message: string): void {
 
 // ── Starting ─────────────────────────────────────────────────────────────────
 
-/** Starts the session: a board, on which anybody can share a screen at any time. */
-async function startSession(): Promise<void> {
+/**
+ * Starts the session: a board, on which anybody can share a screen at any time, or a support
+ * session for one person (spec/08_remote_support).
+ */
+async function startSession(mode: SessionMode = 'board'): Promise<void> {
   if (host) {
     return;
   }
@@ -327,6 +368,7 @@ async function startSession(): Promise<void> {
   try {
     host = await ShareHost.start({
       settings,
+      mode,
       clearBoard: () => board?.clear(),
       clearDrawings: () => board?.clearDrawings(),
     });
@@ -336,7 +378,9 @@ async function startSession(): Promise<void> {
     return;
   }
   enterApp();
-  void startBackup();
+  if (mode === 'board') {
+    void startBackup(); // a support session draws nothing that lasts
+  }
 }
 
 // ── Backup ───────────────────────────────────────────────────────────────────
@@ -432,6 +476,10 @@ function fillSettings(p: PresenterPrefs): void {
   input('maxWidth').value = String(s.video.maxWidth);
   input('maxHeight').value = String(s.video.maxHeight);
   input('bitrateKbps').value = String(s.video.bitrateKbps);
+  $<HTMLSelectElement>('supportFps').value = String(s.supportVideo.fps);
+  input('supportMaxWidth').value = String(s.supportVideo.maxWidth);
+  input('supportMaxHeight').value = String(s.supportVideo.maxHeight);
+  input('supportBitrateKbps').value = String(s.supportVideo.bitrateKbps);
   showAvatar(s.avatar);
   input('trackerTtl').value = String(s.trackerTtlMinutes);
   $<HTMLTextAreaElement>('trackers').value = s.trackers.join('\n');
@@ -455,6 +503,12 @@ function readSettings(): PresenterPrefs {
         maxWidth: input('maxWidth').valueAsNumber,
         maxHeight: input('maxHeight').valueAsNumber,
         bitrateKbps: input('bitrateKbps').valueAsNumber,
+      },
+      supportVideo: {
+        fps: Number($<HTMLSelectElement>('supportFps').value),
+        maxWidth: input('supportMaxWidth').valueAsNumber,
+        maxHeight: input('supportMaxHeight').valueAsNumber,
+        bitrateKbps: input('supportBitrateKbps').valueAsNumber,
       },
       trackers: cleanTrackers($<HTMLTextAreaElement>('trackers').value) ?? [],
       iceServers: parseIceLines($<HTMLTextAreaElement>('iceServers').value),
@@ -494,9 +548,14 @@ function saveSettings(): void {
   summary();
   board?.setToolHints(prefs.toolHints);
   if (host && settings) {
-    settings = { ...settings, video: prefs.settings.video, avatar: prefs.settings.avatar };
+    settings = {
+      ...settings,
+      video: prefs.settings.video,
+      supportVideo: prefs.settings.supportVideo,
+      avatar: prefs.settings.avatar,
+    };
     board?.setAvatar(prefs.settings.avatar);
-    host.setVideo(settings.video);
+    host.setVideo(host.mode === 'support' ? settings.supportVideo : settings.video);
     const own = share?.capture()?.size();
     if (own) {
       ownScale(own.width, own.height);
@@ -551,6 +610,15 @@ function main(): void {
   $('startForm').addEventListener('submit', (e) => {
     e.preventDefault();
     void startSession();
+  });
+  $('startSupport').addEventListener('click', () => void startSession('support'));
+  $('copySupportText').addEventListener('click', () => {
+    const text = $<HTMLTextAreaElement>('supportText');
+    text.select();
+    navigator.clipboard.writeText(text.value).then(
+      () => toast('Text and link copied.'),
+      () => toast('Copy the text from the box.'),
+    );
   });
   $('screenHere').addEventListener(
     'click',

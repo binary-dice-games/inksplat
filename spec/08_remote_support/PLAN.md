@@ -69,7 +69,11 @@ smoke check include it.
 offering a canvas stream appears at once and sets the aspect); `tests/unit/support-page.test.ts`
 (system detection, the `inksplat-support://` URL built from the hash, a bad hash refused);
 `tests/unit/site-build.test.ts` lists `support.html`.
-**Result:** _pending_
+**Result:** done. The support video settings got a tab of their own (**Settings > Support**):
+in the Video tab they made the dialog scroll. The landing page has numbered steps in words, not
+pictures (pictures are left for the tutorial work). The presenter test covers the support start,
+the restricted toolbar and the landing page; a guest offering a stream is covered by the app's
+test (step 4), which uses the real presenter page as the helper.
 
 ## 4. App: link, session and capture
 

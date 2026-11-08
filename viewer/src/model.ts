@@ -103,3 +103,56 @@ export function boardAspect(stage: Stage | null): number {
 export function mayDraw(stage: Stage | null): boolean {
   return stage?.drawing === true;
 }
+
+// ── Support sessions (spec/08_remote_support section 3.1) ─────────────────────
+
+/** What the helper's page needs of a support session's state (`SupportState` of the host). */
+export interface SupportView {
+  status: 'waiting' | 'deciding' | 'sharing';
+  person: { name: string } | null;
+  code: string | null;
+  left: string | null;
+}
+
+/** The status line of a support session on the helper's page. */
+export function supportStatusText(s: SupportView): string {
+  const name = s.person?.name || 'The person';
+  switch (s.status) {
+    case 'waiting':
+      return s.left
+        ? `${s.left} stopped sharing or lost the connection. They can share again from the app with the same link.`
+        : 'Waiting for the person to open the link…';
+    case 'deciding':
+      return `${name} is connected and deciding whether to let you see their screen.`;
+    case 'sharing':
+      return `You can see ${name}'s screen. Point with the laser and emotes: they see them on their screen.`;
+  }
+}
+
+/** The line over the safety code: whom to read it to. */
+export function supportCodeHint(s: SupportView): string {
+  return `Read this code to ${s.person?.name || 'the person'}. Their app shows the same code; if it differs, end the session.`;
+}
+
+/** What to say over the screen of a support session while it shows nothing, or null. */
+export function supportNotice(s: SupportView): string | null {
+  if (s.status === 'waiting') {
+    return 'Nothing is shared yet: send the link.';
+  }
+  if (s.status === 'deciding') {
+    return `Waiting for ${s.person?.name || 'the person'} to allow…`;
+  }
+  return null;
+}
+
+/** The text the helper sends with a support link. */
+export function supportInvitation(link: string): string {
+  return [
+    'Click this link to let me see your screen so I can help you:',
+    link,
+    '',
+    'The first time, it asks you to install the small inksplat Support app. I will see your ' +
+      'screen and point at things, but I cannot click or type on your computer. You can stop at ' +
+      'any time with the Stop button.',
+  ].join('\n');
+}

@@ -51,6 +51,10 @@ export async function smokeSite(base, get = (url) => fetch(url, { redirect: 'man
     contains: 'present.js',
     label: `versioned presenter /${major}`,
   });
+  await check('support.html', {
+    contains: ['support.js', 'Open inksplat Support'],
+    label: 'support landing page',
+  });
   await check('privacy.html', { contains: 'privacy policy', label: 'privacy policy' });
   await check('tutorial.html', { contains: 'How to use inksplat', label: 'tutorial' });
   await check('no-such-page-for-smoke-test', {
