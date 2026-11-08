@@ -12,7 +12,8 @@ capture on Windows, macOS 14, macOS 15+ and Linux X11/Wayland.
 **Deliverables:** `support-app/` workspace skeleton (Electron pinned, esbuild build, one main
 file, one page) kept as the base of step 3; a results note appended here: the overlay in the
 capture per system, the delay of a mark from overlay to the far end's video, the source id
-mapping from `screen.Display` to `desktopCapturer`, the macOS permission and relaunch path,
+mapping from `screen.Display` to `desktopCapturer`, CPU and frame rate actually sent at 15
+and 30 fps on a modest machine (sets the default of DESIGN 4.3), the macOS permission and relaunch path,
 Wayland behaviour.
 **Tests:** a Playwright `_electron` test (`tests/e2e/support-spike.test.ts`, `PROJECT e2e`,
 Linux under Xvfb in CI): the app starts, captures a display without a picker, the overlay
@@ -26,12 +27,16 @@ found in the captured frames. Windows and macOS are checked by hand and recorded
 **Deliverables:** `packages/defaults`: `Stage.mode`, `client`/`v` in the `screen` offer,
 `SUPPORT_SCHEME`, `supportLink`; `ShareHost` `mode: 'support'` (lock after the first guest,
 auto-active offer, aspect from the offer, guest locked to pointer-only, unlock on leave,
-frame rate raised while marks show (DESIGN 4.2); whiteboard `localMarks` option (header
+support video settings (DESIGN 4.3: `SUPPORT_VIDEO`, `cleanSupportVideo`,
+`supportVideo` in the presenter settings, sent with `uplinkParams`, which gains
+`degradationPreference` in `collab-session`); whiteboard `localMarks` option (header
 records the change)); presenter page passes `localMarks: false`; TSDoc.
 **Tests:** `tests/unit/defaults.test.ts` (stage `mode` cleaning, offer with `client`/`v`,
-`supportLink`); `tests/unit/share-host.test.ts` (support mode: first
+`supportLink`, `cleanSupportVideo` bounds and defaults);
+`tests/unit/present-settings.test.ts` (`supportVideo` kept apart from the ordinary video
+settings); `tests/unit/share-host.test.ts` (support mode: first
 offer active, aspect, second guest refused or removed, guest drawing refused, unlock and rejoin,
-frame rate raised while marks show); the whiteboard's `localMarks` option (marks are sent but
+the guest's uplink gets the support video settings); the whiteboard's `localMarks` option (marks are sent but
 not drawn locally; remote marks still drawn) in `tests/unit/whiteboard-pointer-modes.test.ts`.
 **Result:** _pending_
 

@@ -139,7 +139,7 @@ Key decisions (the *why*):
   (bundled, not loaded from the site), the same trackers and sealed offers, and the same
   protocol id. The host needs no new transport: the app's screen travels on the guest uplink of
   `spec/07` section 4.1, and the cursor, laser and emotes are the `wb` messages every viewer
-  already receives. Nothing in the session package changes.
+  already receives. The session package only gains one optional sender parameter (4.3).
 - **Capture through `getDisplayMedia` with Electron's handler, not a picker.** The session
   window calls `navigator.mediaDevices.getDisplayMedia` as the share button does; the main
   process answers it with `session.setDisplayMediaRequestHandler`, giving the
@@ -209,9 +209,40 @@ without drawing them: `localMarks?: boolean` (default true), recorded in the fil
 an inksplat change. The presenter page passes `localMarks: false` in a support session. Remote
 marks and everything stored are unaffected.
 
-**Frame rate.** The laser trail is only as smooth as the video, so the host raises the guest's
-frame rate to at least 10 fps (within the settings' limits) while marks are on screen, and
-back to the support default (open question 6) a second after the last one.
+The laser trail is only as smooth as the video, which is why a support session uses a high
+frame rate (4.3).
+
+### 4.3 Video: one viewer, high frame rate
+
+Ordinary sessions keep a low frame rate (`spec/03`, at most 15 fps) because the host sends to
+up to ten viewers. A support session has **one stream to one viewer**: the person's uplink to
+the helper, nothing relayed, nothing sent back (the owner of the active stream never gets its
+own stream, `spec/07` section 3.6). So it can afford a fluid video, which makes the helper's
+view of the cursor, the laser (4.2) and the person's own pointer feel live.
+
+Support sessions have their own video settings (`SUPPORT_VIDEO` in `packages/defaults`, kept
+apart from the ordinary ones in the presenter page's settings, `supportVideo`):
+
+| Setting | Support default | Support range | Ordinary (for comparison) |
+|---|---|---|---|
+| Frame rate | 30 fps | 15-30 fps (presets 15, 20, 30) | 0.5-15, default 3 |
+| Bitrate cap | 4000 kbit/s | 500-8000 | 100-8000, default 1500 |
+| Size limit | 1920 on the long side | 1280 up to the screen's own | up to 3840x2160 |
+| Content hint | `text` | as today | `detail` |
+
+They reach the person's encoder through `uplinkParams` as for any guest (`spec/07` section
+4.4), and the capture is asked for the same frame rate (`frameRate` in the request the
+display handler answers). The sender uses `degradationPreference: 'balanced'`: on a slow link
+the encoder lowers both rate and resolution a little rather than freezing text or dropping to
+a few frames per second. (`UplinkParams` gains an optional `degradationPreference`, the only
+change to `collab-session` for this project, recorded in its header; absent, as today.) The helper can change them in **Settings > Video** during the session;
+they apply at once.
+
+Cost on the person's computer: one encode of one display at up to 30 fps. The codec is the
+first of `FORWARD_CODECS` the person's machine encodes in hardware (`viewer/src/codec-choice.ts`
+logic, run in the app), so an older laptop encodes H.264 on its media engine instead of AV1 in
+software. The size limit of 1920 keeps a 4K screen's encode affordable; the helper can raise it
+when small text is hard to read.
 
 ## 5. Protocol
 
@@ -268,9 +299,11 @@ shows "The connection was lost" with **Try again** (asks for consent again) and 
 
 | Piece | Where | Change |
 |---|---|---|
-| Stage, `screen` messages | `packages/defaults/src/index.ts` | `Stage.mode`, `client`/`v` in `offer`, `SUPPORT_SCHEME = 'inksplat-support'`, `supportLink(base, fragment, extra)` |
+| Stage, `screen` messages | `packages/defaults/src/index.ts` | `Stage.mode`, `client`/`v` in `offer`, `SUPPORT_SCHEME = 'inksplat-support'`, `supportLink(base, fragment, extra)`, `SUPPORT_VIDEO` limits and defaults, `cleanSupportVideo` |
 | `ShareHost` | `viewer/src/share-host.ts` | `mode: 'support'`: one guest, auto-active, aspect from the offer, `wb` from guests dropped |
 | Whiteboard | `packages/collab-whiteboard/collab-whiteboard.js`/`.d.ts` (nymph copy) | `localMarks` option (4.2); header records the change |
+| Session | `packages/collab-session/collab-session.js`/`.d.ts` (nymph copy) | Optional `degradationPreference` in `UplinkParams` (4.3); header records the change |
+| Presenter settings | `viewer/src/present-settings.ts` | `supportVideo`, shown in **Settings > Video** during a support session |
 | Presenter page | `viewer/src/present.ts`/`.html` | **Start a support session**, support status line, restricted toolbar, hidden canvas and stream controls, the text to paste |
 | Landing page | `viewer/src/support.html`, `viewer/src/support.ts` | Open button, downloads per system, steps with pictures |
 | Site build | `scripts/build-site.mjs` | `support.html`, its pictures |
@@ -339,17 +372,20 @@ Risks (each checked by the spike, plan step 1):
 
 1. **Marks delay.** The helper sees their own laser and emotes only after the video's delay
    (4.2). On a slow link this can feel sluggish; the helper's mouse pointer stays instant, and
-   the raised frame rate keeps trails readable. If it proves too slow by hand, a later version
+   the high frame rate (4.3) keeps trails smooth. If it proves too slow by hand, a later version
    can draw a local laser on the helper's board only where the overlay can be left out of the
    capture (not planned).
-2. **Wayland.** `desktopCapturer` goes through the xdg portal, which always shows the system
+2. **Encoding load.** 30 fps on an old computer without a hardware encoder may cost a lot of
+   CPU. The encoder lowers its rate under load (`balanced`); the spike measures CPU on a modest
+   machine, and the support default drops to 15 fps if 30 is too heavy.
+3. **Wayland.** `desktopCapturer` goes through the xdg portal, which always shows the system
    picker, and overlays cannot be placed or kept on top reliably on every compositor. Wayland
    is supported best effort; X11 is the tested Linux path.
-3. **macOS permission flow.** Screen Recording needs a restart after it is granted; the
+4. **macOS permission flow.** Screen Recording needs a restart after it is granted; the
    restart must keep the link (passed in the relaunch arguments).
-4. **Signing costs** (Apple Developer ID, a Windows code signing certificate) and their secrets
+5. **Signing costs** (Apple Developer ID, a Windows code signing certificate) and their secrets
    in CI. Unsigned builds work for testing but frighten the target users.
-5. **Protocol drift.** The app bundles `collab-session`; a site update that bumps `PROTOCOL`
+6. **Protocol drift.** The app bundles `collab-session`; a site update that bumps `PROTOCOL`
    breaks old apps until they update. The updater and the "Please update" message cover it.
 
 Open questions (default in brackets, used unless decided otherwise):
@@ -363,6 +399,5 @@ Open questions (default in brackets, used unless decided otherwise):
 4. The name the app uses: the computer's user name or asked each time? [the user name,
    editable on the consent screen, remembered]
 5. Languages for the first version. [English and Spanish]
-6. Should the helper's video settings default lower for support (screens are mostly still
-   text)? [yes: content hint `text`, 5 fps, size limit 1920 on the long side; 10 fps while
-   marks are shown]
+6. Support video defaults (4.3). [30 fps, 4000 kbit/s, 1920 on the long side, content hint
+   `text`]
