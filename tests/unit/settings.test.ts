@@ -32,6 +32,14 @@ describe('settings', () => {
     expect(s.video.fps).toBe(15);
   });
 
+  it('keeps the support video apart from the ordinary video (spec/08 section 4.3)', () => {
+    const s = cleanSettings({ video: { fps: 2 }, supportVideo: { fps: 20 } });
+    expect(s.video.fps).toBe(2);
+    expect(s.supportVideo.fps).toBe(20);
+    expect(cleanSettings({ supportVideo: { fps: 2 } }).supportVideo.fps).toBe(15);
+    expect(cleanSettings(undefined).supportVideo).toEqual(DEFAULT_SETTINGS.supportVideo);
+  });
+
   it('truncates long names and defaults empty ones', () => {
     expect(cleanSettings({ name: 'x'.repeat(100) }).name).toHaveLength(40);
     expect(cleanSettings({ name: '   ' }).name).toBe(DEFAULT_SETTINGS.name);

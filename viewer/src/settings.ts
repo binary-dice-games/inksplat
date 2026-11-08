@@ -8,6 +8,8 @@ import {
   DEFAULT_TRACKERS,
   DEFAULT_VIDEO,
   DEFAULT_VIEWER_BASE,
+  SUPPORT_VIDEO,
+  cleanSupportVideo,
   cleanVideoSettings,
 } from '@inksplat/defaults';
 import type { VideoSettings } from '@inksplat/defaults';
@@ -18,6 +20,8 @@ export interface Settings {
   trackers: string[];
   iceServers: RTCIceServer[];
   video: VideoSettings;
+  /** The video of a support session: one viewer, so a higher frame rate (spec/08 section 4.3). */
+  supportVideo: VideoSettings;
   /** Whether viewers may draw when a session starts. */
   viewersMayDraw: boolean;
   /** The presenter's name shown to viewers. */
@@ -38,6 +42,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   trackers: [...DEFAULT_TRACKERS],
   iceServers: DEFAULT_ICE_SERVERS.map((s) => ({ ...s })),
   video: { ...DEFAULT_VIDEO },
+  supportVideo: { ...SUPPORT_VIDEO },
   viewersMayDraw: true,
   name: 'Presenter',
   color: '#3e63dd',
@@ -146,6 +151,7 @@ export function cleanSettings(input: unknown): Settings {
     trackers: cleanTrackers(o.trackers) ?? [...DEFAULT_SETTINGS.trackers],
     iceServers: cleanIceServers(o.iceServers) ?? DEFAULT_SETTINGS.iceServers.map((s) => ({ ...s })),
     video: cleanVideoSettings(o.video),
+    supportVideo: cleanSupportVideo(o.supportVideo),
     viewersMayDraw:
       typeof o.viewersMayDraw === 'boolean' ? o.viewersMayDraw : DEFAULT_SETTINGS.viewersMayDraw,
     name: name || DEFAULT_SETTINGS.name,

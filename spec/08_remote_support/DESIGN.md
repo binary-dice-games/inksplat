@@ -325,9 +325,9 @@ safety code). A screen lock or sleep in between ends consent anyway (section 7, 
 2 minutes the app shows "The connection was lost" with **Try again** (asks for consent again)
 and **Close**.
 
-The safety code (7.3 R5) is the first 20 bits of SHA-256 over the two fingerprints of the link
-(sorted, so both sides agree), as six decimal digits; the helper's page shows it next to the
-person's name.
+The safety code (7.3 R5) is the first 32 bits of SHA-256 over the two fingerprints of the link
+(sorted, so both sides agree), modulo one million, as six decimal digits (`safetyCode` in
+`packages/defaults`); the helper's page shows it next to the person's name.
 
 ## 6. Components
 

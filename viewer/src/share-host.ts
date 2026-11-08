@@ -4,7 +4,9 @@
  * tested: the host session, the lock on viewers' drawing, removal, the streams
  * on offer and the one on the screen (spec/07_participant_streaming), and the
  * `stage` messages. The presenter page mounts its own whiteboard on the host
- * session, so there is no separate console and no presenter key.
+ * session, so there is no separate console and no presenter key. A support session
+ * (spec/08_remote_support) admits one person, whose screen is shown at once and sets the frame's
+ * aspect, with the safety code of the link.
  */
 import { createSession } from '@inksplat/collab-session';
 import type { Peer, RendezvousSpec, Session } from '@inksplat/collab-session';
@@ -22,6 +24,8 @@ import {
   cleanScreenMessage,
   defaultBackgrounds,
   inviteLink,
+  safetyCode,
+  supportLink,
   toMediaParams,
 } from '@inksplat/defaults';
 import type {
@@ -48,9 +52,32 @@ export interface StreamInfo {
   own: boolean;
 }
 
+/** The kind of session: an ordinary board, or a support session (spec/08_remote_support). */
+export type SessionMode = 'board' | 'support';
+
+/** What the helper's page shows of a support session (spec/08_remote_support section 3.1). */
+export interface SupportState {
+  /**
+   * `waiting`: nobody is connected; `deciding`: the person is connected and has not shared yet;
+   * `sharing`: their screen is on the screen background.
+   */
+  status: 'waiting' | 'deciding' | 'sharing';
+  /** The person connected, or null. */
+  person: { id: string; name: string; color: string } | null;
+  /** The safety code of the link to the person (`"482 913"`), or null until it is known. */
+  code: string | null;
+  /** The version of the person's support app, when it said. */
+  version: string | null;
+  /** The name of the person who left last, while nobody is connected. */
+  left: string | null;
+}
+
 /** What the presenter page shows about the share. */
 export interface UiState {
   phase: 'idle' | 'live';
+  mode: SessionMode;
+  /** The state of a support session; null in an ordinary one. */
+  support: SupportState | null;
   /** The link to give viewers, or null while idle. */
   link: string | null;
   viewers: { id: string; name: string; color: string; path: string | null }[];
@@ -72,6 +99,8 @@ export interface UiState {
 
 export const IDLE_UI: Readonly<UiState> = {
   phase: 'idle',
+  mode: 'board',
+  support: null,
   link: null,
   viewers: [],
   locked: false,
@@ -107,6 +136,29 @@ export interface ShareHostOptions {
   clearDrawings?: () => void;
   /** Host: forward guests' encoded frames where the browser can (default true; tests). */
   forwardFrames?: boolean;
+  /** `support` starts a support session (spec/08_remote_support); default `board`. */
+  mode?: SessionMode;
+}
+
+/** Commands an ordinary session has and a support session refuses. */
+const BOARD_ONLY = new Set<Command['cmd']>([
+  'lock',
+  'drawing',
+  'show',
+  'preview',
+  'newLink',
+  'clear',
+  'clearDrawings',
+  'background',
+]);
+
+/** A DTLS certificate for every link of a support session, so its safety code holds on a reconnect. */
+async function sessionCertificate(): Promise<RTCCertificate[] | undefined> {
+  if (typeof RTCPeerConnection !== 'function') {
+    return undefined; // the memory network of the tests
+  }
+  const ecdsa: EcKeyGenParams = { name: 'ECDSA', namedCurve: 'P-256' };
+  return [await RTCPeerConnection.generateCertificate(ecdsa)];
 }
 
 /**
@@ -115,6 +167,7 @@ export interface ShareHostOptions {
  */
 export class ShareHost {
   readonly session: Session;
+  readonly mode: SessionMode;
   private readonly settings: Settings;
   private readonly clearBoard: () => void;
   private readonly clearDrawings: () => void;
@@ -132,14 +185,22 @@ export class ShareHost {
   private readonly listeners = new Set<(ui: UiState) => void>();
   private readonly gate = drawingGate(() => this.drawing);
   private stopped = false;
+  /** Support: the safety code of each guest's link. */
+  private readonly codes = new Map<string, string>();
+  /** Support: the app version each guest said. */
+  private readonly versions = new Map<string, string>();
+  /** Support: the name of the person who left last (cleared when somebody connects). */
+  private left: string | null = null;
 
   private constructor(session: Session, options: ShareHostOptions) {
     this.session = session;
+    this.mode = options.mode ?? 'board';
     this.settings = options.settings;
     this.clearBoard = options.clearBoard ?? (() => {});
     this.clearDrawings = options.clearDrawings ?? (() => {});
-    this.drawing = options.settings.viewersMayDraw;
-    this.video = options.settings.video;
+    const support = this.mode === 'support';
+    this.drawing = support ? false : options.settings.viewersMayDraw;
+    this.video = support ? options.settings.supportVideo : options.settings.video;
     this.backgrounds = defaultBackgrounds();
     session.mediaParams(toMediaParams(this.video));
     session.setRelay(null);
@@ -170,6 +231,10 @@ export class ShareHost {
     // Codecs this machine encodes in hardware first: the host's own stream is encoded once in
     // the first of them that every viewer can take.
     const forwardCodecs = await hardwareFirst(FORWARD_CODECS);
+    const support = options.mode === 'support';
+    // A support session sends nothing on: the person's own codec order (hardware first on their
+    // machine) decides, and one certificate keeps the safety code across reconnects.
+    const certificates = support ? await sessionCertificate() : undefined;
     const session = await createSession({
       role: 'host',
       protocol: PROTOCOL,
@@ -182,7 +247,8 @@ export class ShareHost {
       ],
       accept: (channel, message, from) => host?.accept(channel, message, from) ?? false,
       forwardCodecs,
-      ...(options.forwardFrames === false ? { forwardFrames: false } : {}),
+      ...(options.forwardFrames === false || support ? { forwardFrames: false } : {}),
+      ...(certificates ? { certificates } : {}),
     });
     host = new ShareHost(session, options);
     return host;
@@ -214,6 +280,9 @@ export class ShareHost {
     if (m.cmd === 'withdraw') {
       this.dropStream(from);
     } else {
+      if (m.v) {
+        this.versions.set(from, m.v);
+      }
       this.streams.set(from, {
         id: from,
         name: peer.name,
@@ -224,6 +293,9 @@ export class ShareHost {
         own: false,
       });
       this.asked.delete(from); // a new capture (or a new link): tell it again
+      if (this.mode === 'support' && this.active === null) {
+        this.active = from; // the person's screen is what a support session is for
+      }
     }
     this.streamsChanged();
   }
@@ -242,6 +314,9 @@ export class ShareHost {
 
   /** Someone came or went: the streams of those who left go. */
   private peersChanged(): void {
+    if (this.mode === 'support') {
+      this.supportPeers();
+    }
     const here = new Set(this.session.peers().map((p) => p.id));
     let gone = false;
     for (const id of [...this.streams.keys()]) {
@@ -258,6 +333,55 @@ export class ShareHost {
     if (gone) {
       this.streamsChanged();
     } else {
+      this.changed();
+    }
+  }
+
+  /**
+   * Support: one person at most. The room is locked while somebody is connected (a forwarded link
+   * lets nobody else in) and open again when they leave, so the app can reconnect; a second guest
+   * who got in at the same moment is removed.
+   */
+  private supportPeers(): void {
+    if (this.stopped) {
+      return;
+    }
+    const guests = this.session.peers().filter((p) => p.role === 'guest');
+    for (const extra of guests.slice(1)) {
+      this.session.remove(extra.id);
+    }
+    const person = guests[0];
+    if (person) {
+      this.left = null;
+      if (!this.codes.has(person.id)) {
+        void this.findCode(person.id);
+      }
+    } else {
+      const gone = [...this.streams.values()].find((s) => !s.own) ?? null;
+      if (gone) {
+        this.left = gone.name;
+      }
+    }
+    for (const id of [...this.codes.keys()]) {
+      if (id !== person?.id) {
+        this.codes.delete(id);
+        this.versions.delete(id);
+      }
+    }
+    if (this.session.locked !== !!person) {
+      this.session.lock(!!person);
+    }
+  }
+
+  /** Support: works out the safety code of the link to `id` (DESIGN 7.3 R5). */
+  private async findCode(id: string): Promise<void> {
+    const fp = this.session.fingerprints(id);
+    if (!fp) {
+      return;
+    }
+    const code = await safetyCode(fp.local, fp.remote);
+    if (!this.stopped && this.session.peers().some((p) => p.id === id)) {
+      this.codes.set(id, code);
       this.changed();
     }
   }
@@ -286,6 +410,8 @@ export class ShareHost {
         maxBitrate: params.maxBitrate,
         contentHint: params.contentHint,
         scale: fitScale(s.w, s.h, this.video.maxWidth, this.video.maxHeight),
+        // One viewer and a fluid video: a slow link lowers rate and size a little, not one alone.
+        ...(this.mode === 'support' ? { degradationPreference: 'balanced' as const } : {}),
       };
       const key = JSON.stringify(ask);
       if (this.asked.get(s.id) !== key) {
@@ -350,10 +476,12 @@ export class ShareHost {
   /** The stage as viewers see it. */
   stage(): Stage {
     const active = this.active ? this.streams.get(this.active) : undefined;
+    // A support session's frame is the person's display, so a mark lands where it is drawn.
+    const display = this.mode === 'support' && active && active.w > 0 && active.h > 0;
     return {
-      aspect: STAGE_ASPECT,
-      w: STAGE_W,
-      h: STAGE_H,
+      aspect: display ? active.w / active.h : STAGE_ASPECT,
+      w: display ? active.w : STAGE_W,
+      h: display ? active.h : STAGE_H,
       fps: this.video.fps,
       state: this.stopped ? 'ended' : 'live',
       drawing: this.drawing,
@@ -369,6 +497,7 @@ export class ShareHost {
           }
         : {}),
       ...(this.preview ? { preview: this.preview } : {}),
+      ...(this.mode === 'support' ? { mode: 'support' as const } : {}),
     };
   }
 
@@ -384,9 +513,25 @@ export class ShareHost {
     return { trackers: this.settings.trackers };
   }
 
-  /** The link to give viewers. */
+  /** The link to give viewers; in a support session, the support link that opens the app. */
   link(): string {
-    return inviteLink(this.settings.viewerBase, this.session.inviteFragment(), this.trackerList());
+    const make = this.mode === 'support' ? supportLink : inviteLink;
+    return make(this.settings.viewerBase, this.session.inviteFragment(), this.trackerList());
+  }
+
+  /** What a support session's page shows; null in an ordinary session. */
+  private supportState(): SupportState | null {
+    if (this.mode !== 'support') {
+      return null;
+    }
+    const p = this.session.peers().find((q) => q.role === 'guest') ?? null;
+    return {
+      status: !p ? 'waiting' : this.active === p.id ? 'sharing' : 'deciding',
+      person: p ? { id: p.id, name: p.name, color: p.color } : null,
+      code: p ? (this.codes.get(p.id) ?? null) : null,
+      version: p ? (this.versions.get(p.id) ?? null) : null,
+      left: p ? null : this.left,
+    };
   }
 
   /** The state the page shows. */
@@ -396,6 +541,8 @@ export class ShareHost {
     }
     return {
       phase: 'live',
+      mode: this.mode,
+      support: this.supportState(),
       link: this.link(),
       viewers: this.session
         .peers()
@@ -438,6 +585,9 @@ export class ShareHost {
     stream: MediaStream | null,
     info: { surface: ScreenSurface; w: number; h: number } = { surface: 'unknown', w: 0, h: 0 },
   ): void {
+    if (this.mode === 'support' && stream) {
+      throw new Error('the helper does not share a screen in a support session');
+    }
     const id = this.session.me.id;
     const fresh = stream !== null && stream !== this.own;
     this.own = stream;
@@ -487,6 +637,9 @@ export class ShareHost {
   async command(command: Command): Promise<void> {
     if (this.stopped) {
       return;
+    }
+    if (this.mode === 'support' && BOARD_ONLY.has(command.cmd)) {
+      throw new Error('not in a support session');
     }
     switch (command.cmd) {
       case 'newLink':

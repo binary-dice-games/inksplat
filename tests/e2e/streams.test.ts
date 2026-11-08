@@ -4,6 +4,7 @@ import type { Browser, BrowserContext, Page } from 'playwright-core';
 import type { Server } from 'node:http';
 import { FakeTracker } from '../support/fake-tracker';
 import { launchChrome, serveFiles } from '../support/browser';
+import { safetyCode } from '@inksplat/defaults';
 
 // Guests' streams over real WebRTC (spec/07_participant_streaming, plan steps 3 and 4): a guest's
 // canvas goes up to the host only when asked, and the host relays the stream it picks to every
@@ -20,6 +21,7 @@ interface App {
     setRelay(id: string | null): void;
     relayMode: string;
     me: { id: string };
+    fingerprints(id: string): { local: string; remote: string } | null;
   };
   ask(id: string, on: boolean): void;
   share(on: boolean): void;
@@ -255,5 +257,33 @@ describe("guests' streams relayed by the host", () => {
     expect(await host.evaluate(() => (window as unknown as Host).app.session.encoderInfo())).toBe(
       null,
     );
+  });
+});
+
+describe('one certificate for every link (spec/08_remote_support section 5.4)', () => {
+  it('gives the host the same fingerprint on every link, and both ends the same safety code', async () => {
+    const host = await open({ role: 'host', id: 'host-0001', color: '#0000ee', cert: '1' });
+    const token = await host.evaluate(() => (window as unknown as { app: App }).app.token);
+    const [ana, bob] = await Promise.all([
+      open({ role: 'guest', id: 'ana-0001', color: '#ee0000', token }),
+      open({ role: 'guest', id: 'bob-0001', color: '#00cc00', token }),
+    ]);
+    await Promise.all([joined(ana), joined(bob)]);
+    const prints = (page: Page, id: string) =>
+      page.evaluate(
+        (peer) => (window as unknown as { app: App }).app.session.fingerprints(peer),
+        id,
+      );
+    const toAna = await prints(host, 'ana-0001');
+    const toBob = await prints(host, 'bob-0001');
+    const fromAna = await prints(ana, 'host-0001');
+    expect(toAna?.local).toMatch(/^[0-9A-F]{2}(:[0-9A-F]{2}){31}$/);
+    expect(toBob?.local).toBe(toAna?.local); // the host is the same on every link
+    expect(toBob?.remote).not.toBe(toAna?.remote);
+    expect(fromAna).toEqual({ local: toAna!.remote, remote: toAna!.local });
+    expect(await safetyCode(fromAna!.local, fromAna!.remote)).toBe(
+      await safetyCode(toAna!.local, toAna!.remote),
+    );
+    expect(await prints(host, 'nobody-1')).toBeNull();
   });
 });

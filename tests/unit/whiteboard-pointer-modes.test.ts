@@ -395,3 +395,47 @@ describe('emotes', () => {
     }
   });
 });
+
+describe('localMarks: false (a support session, spec/08_remote_support section 4.2)', () => {
+  it('sends the laser, pings and emotes without drawing them here; others still draw them', async () => {
+    const room = new TestRoom();
+    const host = await room.start();
+    const hostBoard = createWhiteboard(box(800, 450), {
+      session: host,
+      adapter: identity,
+      localMarks: false,
+    });
+    const guest = await room.join('Bob');
+    await until(() => guest.host(), 'guest reached host');
+    const guestBoard = createWhiteboard(box(800, 450), { session: guest, adapter: identity });
+    await until(() => host.peers().some((p) => p.id === guest.me.id), 'host sees the guest');
+    const hostRoot = hostBoard.element.shadowRoot!;
+    const guestRoot = guestBoard.element.shadowRoot!;
+    try {
+      hostBoard.setStyle({ pointerMode: 'laser' });
+      const board = hostRoot.querySelector('svg')!;
+      pointer(board, 'pointerdown', 100, 100);
+      for (let i = 1; i <= 10; i++) {
+        pointer(board, 'pointermove', 100 + i * 10, 100 + i * 5);
+      }
+      pointer(board, 'pointerup', 200, 150);
+      expect(hostBoard.ping({ x: 50, y: 50 })).not.toBeNull();
+      expect(hostBoard.addEmote('heart', { x: 300, y: 200 })).not.toBeNull();
+
+      await until(() => guestRoot.querySelector('.laser-trail path'), 'the guest sees the trail');
+      await until(() => guestRoot.querySelector('.ping'), 'the guest sees the ping');
+      await until(() => guestRoot.querySelector('.emote'), 'the guest sees the emote');
+      expect(hostRoot.querySelector('.laser-trail')).toBeNull();
+      expect(hostRoot.querySelector('.ping')).toBeNull();
+      expect(hostRoot.querySelector('.emote')).toBeNull();
+
+      // The guest's marks are still drawn on the host's board.
+      guestBoard.ping({ x: 70, y: 70 });
+      await until(() => hostRoot.querySelector('.ping'), "the host sees the guest's ping");
+    } finally {
+      hostBoard.destroy();
+      guestBoard.destroy();
+      room.close();
+    }
+  });
+});

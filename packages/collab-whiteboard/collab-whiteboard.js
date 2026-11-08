@@ -34,7 +34,9 @@
  * several items, which are moved, coloured, removed, copied, cut and pasted together; zoomed in, a
  * mouse drag there pans only with Space held. A faint line under the canvases says how to use the
  * tool in hand (or the selection) for a few seconds after it changes; `toolHints: false` or
- * `setToolHints(false)` leaves it out.
+ * `setToolHints(false)` leaves it out. `localMarks: false` sends this person's laser, pings and
+ * emotes without drawing them here (a support session shows them in the video instead,
+ * spec/08_remote_support/DESIGN.md section 4.2).
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -1633,6 +1635,7 @@ export class Whiteboard {
     const own = this.session.me.color;
     this.style = { color: COLOR.test(own ?? '') ? own : PALETTE[0], width: WIDTHS[1], size: SIZES[1], sticker: 'check', shape: 'square', pinShape: 'round', heads: 'end', pointerMode: 'cursor' };
     this.readOnlyFlag = !!options.readOnly;
+    this.localMarks = options.localMarks !== false; // inksplat: draw this person's laser, pings and emotes here
     this.nodes = new Map(); // item id -> SVG node
     this.liveInk = new Map(); // `${peer}:${id}` -> {node, points, seq}
     this.cursors = new Map(); // peer id -> {node, x, y, timer}
@@ -4076,7 +4079,9 @@ export class Whiteboard {
     const id = `p${this.fxSeq}`;
     const x = round1(at.x);
     const y = round1(at.y);
-    this.showPing(`${this.session.me.id}:${id}`, x, y, this.session.me.color);
+    if (this.localMarks) {
+      this.showPing(`${this.session.me.id}:${id}`, x, y, this.session.me.color);
+    }
     this.send({ t: 'ping', id, x, y, pg: this.page }, { fast: true });
     return id;
   }
@@ -4109,7 +4114,9 @@ export class Whiteboard {
     const l = this.lasing;
     const x = round1(p.x);
     const y = round1(p.y);
-    this.trailPoints(l.key, [x, y], this.session.me.color);
+    if (this.localMarks) {
+      this.trailPoints(l.key, [x, y], this.session.me.color);
+    }
     l.pending.push(x, y);
     if (performance.now() - l.sentAt >= 33) {
       this.sendLaser();
@@ -4238,7 +4245,9 @@ export class Whiteboard {
     this.fxSeq += 1;
     const id = `${this.session.me.id}.e${this.fxSeq}`.slice(-64);
     const m = { t: 'emote', id, name, x: round1(at.x), y: round1(at.y), level: 1, pg: this.page };
-    this.remoteEmote(m);
+    if (this.localMarks) {
+      this.remoteEmote(m);
+    }
     this.send(m, { fast: true });
     return id;
   }

@@ -19,7 +19,17 @@ Wayland behaviour.
 Linux under Xvfb in CI): the app starts, captures a display without a picker, the overlay
 window exists, is transparent and ignores mouse events, and a coloured mark drawn on it is
 found in the captured frames. Windows and macOS are checked by hand and recorded.
-**Result:** _pending_
+**Result:** done, by hand in a Linux container (Electron 44.9.3, Xvfb, no compositor); no
+separate spike page was kept: the app's own tests (steps 4 to 6) cover what it checked.
+`getDisplayMedia` answered by `setDisplayMediaRequestHandler` captures the display with no
+picker (`displaySurface: monitor`, 30 fps asked and given); `desktopCapturer`'s `display_id`
+matches `screen.Display.id`; a mark drawn on the overlay is in the captured frames. Without a
+compositor an X11 transparent window is drawn opaque (black), so the overlay hides the screen:
+real Linux desktops have a compositor; this goes on the manual checklist. Playwright's
+`_electron` drives Electron 44 (it needs `--no-sandbox` as root and starts Electron with
+`--inspect` and `--remote-debugging-port`, so the refusal of those switches applies only to a
+packaged app, DESIGN 4.1). Windows, macOS and Wayland were not available here: manual
+checklist. CPU at 15 and 30 fps on a modest machine: not measured here (manual checklist).
 
 ## 2. Data model and host support mode
 
@@ -42,7 +52,10 @@ settings); `tests/unit/share-host.test.ts` (support mode: first
 offer active, aspect, second guest refused or removed, guest drawing refused, unlock and rejoin,
 the guest's uplink gets the support video settings); the whiteboard's `localMarks` option (marks are sent but
 not drawn locally; remote marks still drawn) in `tests/unit/whiteboard-pointer-modes.test.ts`.
-**Result:** _pending_
+**Result:** done. `safetyCode` uses 32 bits of the hash modulo one million (20 bits do not
+fit in six digits; DESIGN 5.4 corrected). In a support session the host does not forward
+frames (`forwardFrames: false`): there is no other viewer, so the person's own codec order
+decides. The session's certificate test is in `tests/e2e/streams.test.ts`.
 
 ## 3. Presenter page support mode and landing page
 

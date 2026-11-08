@@ -13,6 +13,9 @@
  * the forwarded codec chosen per link (`forwardCodecs`, `sdpCodecs`; a viewer on another codec
  * gets the source re-encoded); a guest announces only the video of the link it keeps (`adopt`);
  * the host's own stream is encoded once for all viewers (`SharedEncoder`, `encoderInfo`).
+ * For support sessions (spec/08_remote_support/DESIGN.md sections 4.3 and 5.4): the
+ * `certificates` option (one DTLS certificate for every link), `fingerprints(peerId)`, and
+ * `degradationPreference` in the host's `up` message.
  * It imports nothing.
  *
  *   import { createSession } from './collab-session.js';
@@ -1411,6 +1414,7 @@ class MediaController {
       maxBitrate: num(m.maxBitrate, 10_000, 50_000_000),
       scale: num(m.scale, 1, 16),
       contentHint: ['detail', 'text', 'motion'].includes(m.contentHint) ? m.contentHint : undefined,
+      degradationPreference: ['balanced', 'maintain-framerate', 'maintain-resolution'].includes(m.degradationPreference) ? m.degradationPreference : undefined,
     };
     const track = this.uplinkTrack();
     if (track && this.uplink.contentHint) {
@@ -1432,7 +1436,7 @@ class MediaController {
 
   /** @private */
   applyUplink(sender) {
-    const { active, fps, maxBitrate, scale } = this.uplink;
+    const { active, fps, maxBitrate, scale, degradationPreference } = this.uplink;
     const p = sender.getParameters();
     if (!p.encodings?.length) {
       return; // before negotiation: the transceiver's own (inactive) encoding stays
@@ -1442,7 +1446,7 @@ class MediaController {
     if (fps) enc.maxFramerate = fps;
     if (maxBitrate) enc.maxBitrate = maxBitrate;
     if (scale) enc.scaleResolutionDownBy = scale;
-    p.degradationPreference = 'maintain-resolution';
+    p.degradationPreference = degradationPreference ?? 'maintain-resolution';
     sender.setParameters(p).catch(() => {});
   }
 
@@ -1507,9 +1511,15 @@ class MediaController {
   }
 }
 
-/** A new offering link: its link and its full offer SDP. */
-async function makeOffer(iceServers, gatherMs, media) {
-  const pc = new RTCPeerConnection({ iceServers });
+/** The SHA-256 fingerprint an SDP gives (`a=fingerprint:sha-256 AB:CD:...`, upper case), or null. (inksplat) */
+export function sdpFingerprint(sdp) {
+  const m = /^a=fingerprint:sha-256 ([0-9A-Fa-f]{2}(?::[0-9A-Fa-f]{2}){31})\s*$/im.exec(typeof sdp === 'string' ? sdp : '');
+  return m ? m[1].toUpperCase() : null;
+}
+
+/** A new offering link: its link and its full offer SDP. `config` is {iceServers, certificates?}. */
+async function makeOffer(config, gatherMs, media) {
+  const pc = new RTCPeerConnection({ ...config });
   const link = new WebRtcLink(pc);
   media?.prepareOffer(pc);
   await pc.setLocalDescription(await pc.createOffer());
@@ -1518,8 +1528,8 @@ async function makeOffer(iceServers, gatherMs, media) {
 }
 
 /** The answering side of `offerSdp`: its link and its full answer SDP. */
-async function makeAnswer(iceServers, offerSdp, gatherMs, media) {
-  const pc = new RTCPeerConnection({ iceServers, ...media?.pcConfig() });
+async function makeAnswer(config, offerSdp, gatherMs, media) {
+  const pc = new RTCPeerConnection({ ...config, ...media?.pcConfig() });
   const link = new WebRtcLink(pc);
   await pc.setRemoteDescription({ type: 'offer', sdp: offerSdp });
   media?.prepareAnswer(pc);
@@ -1671,7 +1681,7 @@ class TorrentRendezvous {
     const made = await Promise.all(
       Array.from({ length: this.offers }, async () => {
         try {
-          const { link, pc, sdp } = await makeOffer(this.ctx.iceServers, this.gatherMs, this.ctx.media);
+          const { link, pc, sdp } = await makeOffer(this.ctx.pcConfig, this.gatherMs, this.ctx.media);
           const offerId = String.fromCharCode(...randomBytes(20).map((b) => 33 + (b % 94)));
           const sealed = await sealMessage(this.ctx.keys, { p: this.ctx.protocol, from: this.ctx.peerId, role: 'guest', kind: 'offer', sdp, ts: Date.now() });
           this.pending.set(offerId, { link, pc, at: Date.now() });
@@ -1712,7 +1722,7 @@ class TorrentRendezvous {
       dbg('offer received from', short(sealed.from), 'via', ws.url);
       this.ctx.status('offer', sealed.from);
       try {
-        const { link, sdp } = await makeAnswer(this.ctx.iceServers, sealed.sdp, this.gatherMs, this.ctx.media);
+        const { link, sdp } = await makeAnswer(this.ctx.pcConfig, sealed.sdp, this.gatherMs, this.ctx.media);
         const answer = await sealMessage(this.ctx.keys, { p: this.ctx.protocol, from: this.ctx.peerId, role: 'host', kind: 'answer', sdp, ts: Date.now() });
         this.ctx.link(link);
         if (ws.readyState === 1) {
@@ -1831,7 +1841,7 @@ class ManualRendezvous {
   /** Guest: the code to send to the host. */
   async offerCode() {
     this.pending?.link.close();
-    const { link, pc, sdp } = await makeOffer(this.ctx.iceServers, this.gatherMs, this.ctx.media);
+    const { link, pc, sdp } = await makeOffer(this.ctx.pcConfig, this.gatherMs, this.ctx.media);
     this.pending = { link, pc };
     return this.code({ p: this.ctx.protocol, from: this.ctx.peerId, role: 'guest', kind: 'offer', sdp, ts: Date.now() });
   }
@@ -1839,7 +1849,7 @@ class ManualRendezvous {
   /** Host: takes a guest's code; returns the answer code to send back. */
   async acceptOffer(code) {
     const s = await this.read(code, 'offer', 'guest');
-    const { link, sdp } = await makeAnswer(this.ctx.iceServers, s.sdp, this.gatherMs, this.ctx.media);
+    const { link, sdp } = await makeAnswer(this.ctx.pcConfig, s.sdp, this.gatherMs, this.ctx.media);
     this.ctx.link(link);
     return this.code({ p: this.ctx.protocol, from: this.ctx.peerId, role: 'host', kind: 'answer', sdp, ts: Date.now() });
   }
@@ -2023,6 +2033,7 @@ export class Session {
     this.keys = keys;
     this.protocol = options.protocol ?? 'inksplat/2';
     this.iceServers = options.iceServers ?? [];
+    this.certificates = Array.isArray(options.certificates) && options.certificates.length > 0 ? [...options.certificates] : null;
     this.accept = options.accept ?? (() => true);
     this.me = { id: options.peerId ?? randomId(8), ...cleanPresence(options.me), role: this.role };
     /** This tab's session object: a reload is a new instance of the same peer. */
@@ -2078,15 +2089,27 @@ export class Session {
 
   /**
    * Host: whether guest `peerId` sends its uplink (`active`), and with which limits (as
-   * `mediaParams`). (inksplat addition)
+   * `mediaParams`, plus `degradationPreference`). (inksplat addition)
    */
   uplinkParams(peerId, params) {
     this.hostOnly();
     const entry = this.links.get(peerId);
     if (entry) {
-      const { active, fps, maxBitrate, scale, contentHint } = params ?? {};
-      this.sendControlTo(entry, { t: 'up', active: active === true, fps, maxBitrate, scale, contentHint });
+      const { active, fps, maxBitrate, scale, contentHint, degradationPreference } = params ?? {};
+      this.sendControlTo(entry, { t: 'up', active: active === true, fps, maxBitrate, scale, contentHint, degradationPreference });
     }
+  }
+
+  /**
+   * The SHA-256 DTLS certificate fingerprints of the link to `peerId` (the host, for a guest):
+   * `{local, remote}` as the SDPs give them (`AB:CD:...`), or null when there is no such WebRTC
+   * link or its descriptions carry none. (inksplat addition, spec/08_remote_support section 5.4)
+   */
+  fingerprints(peerId) {
+    const pc = this.links.get(peerId)?.link?.pc;
+    const local = sdpFingerprint(pc?.localDescription?.sdp);
+    const remote = sdpFingerprint(pc?.remoteDescription?.sdp);
+    return local && remote ? { local, remote } : null;
   }
 
   /**
@@ -2273,6 +2296,8 @@ export class Session {
       keys: this.keys,
       protocol: this.protocol,
       iceServers: this.iceServers,
+      // inksplat: what every RTCPeerConnection is made with (one certificate for all links, if given)
+      pcConfig: { iceServers: this.iceServers, ...(this.certificates ? { certificates: this.certificates } : {}) },
       link: (link) => this.addLink(link),
       status: (stage, detail) => this.status(stage, detail),
       wantsLinks: () => this.role === 'host' || !this.hostLink(),

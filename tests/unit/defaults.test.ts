@@ -21,6 +21,14 @@ import {
   parseInviteHash,
   toMediaParams,
   uplinkKbps,
+  SUPPORT_SCHEME,
+  SUPPORT_VIDEO,
+  SUPPORT_VIDEO_LIMITS,
+  cleanSupportVideo,
+  parseSupportUrl,
+  safetyCode,
+  supportAppUrl,
+  supportLink,
 } from '@inksplat/defaults';
 
 describe('video settings', () => {
@@ -209,5 +217,92 @@ describe('default trackers', () => {
       'wss://tracker.webtorrent.dev',
       'wss://tracker.btorrent.xyz',
     ]);
+  });
+});
+
+describe('support sessions (spec/08_remote_support)', () => {
+  const token = 'abcdefghijklmnopqrstuv';
+
+  it('marks a support stage, and drops any other mode', () => {
+    const base = { aspect: 1.6, w: 1280, h: 800, fps: 30, state: 'live', drawing: false };
+    expect(cleanStage({ ...base, mode: 'support' })?.mode).toBe('support');
+    expect(cleanStage({ ...base, mode: 'evil' })?.mode).toBeUndefined();
+    expect(cleanStage(base)?.mode).toBeUndefined();
+  });
+
+  it("keeps the support app's client and version in an offer, and only well formed", () => {
+    const offer = { cmd: 'offer', surface: 'monitor', w: 1280, h: 800 };
+    expect(cleanScreenMessage({ ...offer, client: 'support', v: '1.2.0' })).toEqual({
+      ...offer,
+      client: 'support',
+      v: '1.2.0',
+    });
+    expect(cleanScreenMessage({ ...offer, client: 'support', v: '<b>'.repeat(9) })).toEqual({
+      ...offer,
+      client: 'support',
+    });
+    expect(cleanScreenMessage({ ...offer, client: 'other', v: '1.0' })).toEqual(offer);
+  });
+
+  it('makes the support link next to the viewer, with the token in the fragment', () => {
+    const link = supportLink('https://example.github.io/inksplat/', `inksplat=${token}`, {
+      trackers: ['wss://t.example'],
+    });
+    const url = new URL(link);
+    expect(url.pathname).toBe('/inksplat/support.html');
+    expect(url.search).toBe('');
+    expect(parseInvite(url.hash)).toEqual({ token, trackers: ['wss://t.example'] });
+  });
+
+  it('turns an invite into an app link and back', () => {
+    const invite = { token, trackers: ['wss://t.example/announce', 'ws://127.0.0.1:9'] };
+    const url = supportAppUrl(invite);
+    expect(url.startsWith(`${SUPPORT_SCHEME}://join#inksplat=${token}`)).toBe(true);
+    expect(parseSupportUrl(url)).toEqual(invite);
+    expect(parseSupportUrl(supportAppUrl({ token }))).toEqual({ token });
+    expect(parseSupportUrl(`${SUPPORT_SCHEME}://join/#inksplat=${token}`)).toEqual({ token });
+  });
+
+  it('refuses every other app link', () => {
+    const ok = `#inksplat=${token}`;
+    for (const bad of [
+      undefined,
+      42,
+      '',
+      `https://join${ok}`,
+      `${SUPPORT_SCHEME}://other${ok}`,
+      `${SUPPORT_SCHEME}://join/x${ok}`,
+      `${SUPPORT_SCHEME}://join?a=1${ok}`,
+      `${SUPPORT_SCHEME}://user@join${ok}`,
+      `${SUPPORT_SCHEME}://join:99${ok}`,
+      `${SUPPORT_SCHEME}://join#inksplat=short`,
+      `${SUPPORT_SCHEME}://join${ok}&tr=${'x'.repeat(2100)}`,
+      `${SUPPORT_SCHEME}://join --gpu-launcher=calc${ok}`,
+      `"${SUPPORT_SCHEME}://join${ok}" --inspect`,
+    ]) {
+      expect(parseSupportUrl(bad), String(bad)).toBeNull();
+    }
+  });
+
+  it('clamps the support video into its own ranges: 15 to 30 frames a second', () => {
+    expect(cleanSupportVideo(undefined)).toEqual(SUPPORT_VIDEO);
+    expect(SUPPORT_VIDEO).toMatchObject({ fps: 30, bitrateKbps: 4000, contentHint: 'text' });
+    const c = cleanSupportVideo({ fps: 3, maxWidth: 99999, bitrateKbps: 1, contentHint: 'x' });
+    expect(c.fps).toBe(SUPPORT_VIDEO_LIMITS.fps.min);
+    expect(c.maxWidth).toBe(SUPPORT_VIDEO_LIMITS.width.max);
+    expect(c.bitrateKbps).toBe(SUPPORT_VIDEO_LIMITS.bitrateKbps.min);
+    expect(c.contentHint).toBe('text');
+    expect(cleanSupportVideo({ fps: 60 }).fps).toBe(30);
+  });
+
+  it('gives the same six-digit safety code at both ends, and another for another link', async () => {
+    const a = 'AB:CD:EF';
+    const b = '01:23:45';
+    const code = await safetyCode(a, b);
+    expect(code).toMatch(/^\d{3} \d{3}$/);
+    expect(await safetyCode(b, a)).toBe(code);
+    expect(await safetyCode(b.toLowerCase(), a.toLowerCase())).toBe(code);
+    expect(await safetyCode(a, '01:23:46')).not.toBe(code);
+    await expect(safetyCode('', b)).rejects.toThrow();
   });
 });
