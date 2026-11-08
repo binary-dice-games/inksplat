@@ -34,5 +34,7 @@ jobs:
       - run: cmake -S . -B build
       - run: cmake --build build --config ${{ matrix.config }} --target viewer
       - run: cmake --build build --config ${{ matrix.config }} --target check
-      # Browser tests use the Chrome preinstalled on the runner.
+      - run: cmake --build build --config ${{ matrix.config }} --target support-app
+      # Browser tests use the Chrome preinstalled on the runner; the support app's tests start
+      # their own Xvfb on Linux (spec/08_remote_support).
       - run: ctest --test-dir build -C ${{ matrix.config }} --output-on-failure --parallel

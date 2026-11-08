@@ -35,6 +35,12 @@ of WebRTC.
 | `relay` | `tests/unit/relay.test.ts` | The host's forwarding of encoded frames: every output but the source's, key frame gating, continuous timestamps, key frame requests |
 | `share_button` | `tests/unit/share-button.test.ts` | The share button: what the owner of a stream is told, the one-time notice, hidden without a picker |
 | `viewer_model` | `tests/unit/viewer-model.test.ts` | The viewer's messages and decisions that need no page |
+| `support_page` | `tests/unit/support-page.test.ts` | The support landing page (system, installer, app link) and the helper's texts |
+| `support_link` | `tests/unit/support-link.test.ts` | The app's link on the command line, hostile and random input, the switches a packaged app refuses |
+| `support_displays` | `tests/unit/support-displays.test.ts` | Which capture source is which display, the next display, where the bar goes |
+| `support_consent` | `tests/unit/support-consent.test.ts` | The consent rules: refusals that pause links, reflex answers, age of a build, same host |
+| `support_allowlist` | `tests/unit/support-allowlist.test.ts` | What reaches the overlay, what the main process takes from each window, the pages' CSP, the texts |
+| `support_build` | `tests/unit/support-build.test.ts` | The installers' configuration: link scheme, file names, fuses, macOS entitlements |
 | `site_build` | `tests/unit/site-build.test.ts` | The Pages site: both pages at the root and under `/v2/` (the protocol major), bundle sizes, the 404 page, the tutorial and its pictures, the smoke check |
 
 Browser tests drive real Chrome with real WebRTC over a local fake tracker.
@@ -47,6 +53,8 @@ Browser tests drive real Chrome with real WebRTC over a local fake tracker.
 | `streams` | `tests/e2e/streams.test.ts` | Guests' uplinks and the host's relay over real WebRTC, forwarded and re-encoded: switching sources, a late joiner, nothing sent before the host asks |
 | `participant_streaming` | `tests/e2e/participant-streaming.test.ts` | The built site: viewers and the presenter offer screens, the presenter previews, shows, switches and shows none |
 | `relay_spike` | `tests/e2e/relay-spike.test.ts` | The browser behaviour the relay relies on: encoded frames written into another peer connection's senders |
+| `support_app` | `tests/e2e/support-app.test.ts` | inksplat Support in Electron with the presenter page as helper: the safety code, nothing shared before Allow, the overlay's marks in the right place, Stop, refusals, reflex answers, the window watchdog, screen lock, a reconnect from another host, refused captures and devices, CSP; not on macOS (Screen Recording needs a person) |
+| `support_package` | `tests/e2e/support-package.test.ts` | The packaged app (electron-builder, unpacked): its fuses, its archive, no code run through `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or a debugging port |
 | `viewer` | `tests/e2e/viewer.test.ts` | The viewer app with the presenter page as host: drawings land at the same place of the frame in windows of different shapes, accessibility (axe-core), who is here, touch on a phone-sized screen, joining with a code, removal, folding the tools |
 
 ## Running parts of the suite
@@ -76,6 +84,11 @@ The browser's real picker cannot be driven by automation. The presenter-page
 tests replace `getDisplayMedia` with a function that returns a moving canvas
 (`tests/support/presenter-site.ts`), as a chosen window would. The real picker is
 on the manual checklist.
+
+The support app's tests run Electron (from the `electron` package) with Playwright. They need a
+display: on Linux without one they start their own Xvfb (`Xvfb` must be installed). The system's
+consent dialog cannot be clicked by automation, so the tests replace `dialog.showMessageBox` in
+the app's main process with answers they choose (`tests/support/support-app.ts`).
 
 ## Writing tests
 

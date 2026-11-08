@@ -204,6 +204,9 @@ describe('inksplat Support', () => {
       await expect
         .poll(() => app.windows(), { timeout: 10000 })
         .toEqual({ session: true, overlay: true });
+      // The overlay's page has loaded (a window closed while it loads ignores the close).
+      const overlay = await app.page('overlay.html');
+      await overlay.waitForFunction(() => document.querySelector('collab-whiteboard') !== null);
     };
     const reason = () =>
       app.app.evaluate(
@@ -214,10 +217,12 @@ describe('inksplat Support', () => {
       );
     await sharing();
     // The overlay closes: the capture stops with it.
+    // Closed after the call returns: Playwright's call can hang on a window closing under it.
     await app.app.evaluate(({ BrowserWindow }) => {
-      BrowserWindow.getAllWindows()
-        .find((w) => w.webContents.getURL().endsWith('/overlay.html'))
-        ?.close();
+      const overlay = BrowserWindow.getAllWindows().find((w) =>
+        w.webContents.getURL().endsWith('/overlay.html'),
+      );
+      setTimeout(() => overlay?.close(), 100);
     });
     await expect.poll(() => app.screen(), { timeout: 10000 }).toBe('stopped');
     expect(await reason()).toBe('window');

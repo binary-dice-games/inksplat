@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support sessions: **Start a support session** on the presenter page helps one person with their computer. They open the link, install the new desktop app **inksplat Support** (Windows, macOS, Linux) once, and allow it; their whole screen is shared, and the helper's cursor, laser, pings and emotes appear on their own screen. The helper can only look and point. Both sides show a safety code to compare; sharing stops on **Stop**, a screen lock, sleep or an hour without confirmation. The video runs at 15 to 30 frames per second (**Settings > Support**).
+- `support.html`, the landing page of a support link: it opens the app or offers its installer.
+
 - Others see an element move, turn or scale (notes, pins, threads' pins, pictures, text, stickers, pin labels, and a moved selection) while it is being edited, as they see the cursor, not only when it is let go; a note can be shaken to draw attention to it.
 - Threads can be tied between any two points: a pin is put at each end that has none. With the thread tool, dragging from a point of a thread splits it with a new pin and pulls a new thread from there; with the pin tool, a click on a thread splits it with a pin. The two ends that meet at the new pin have no head, so the thread keeps its heads.
 - A pin can have a label: its bar has a button for no label (the default) and three for the size of the text; the label is dragged to move it and clicked to write it again.

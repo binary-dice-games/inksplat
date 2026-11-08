@@ -35,7 +35,11 @@ export function detectSystem(userAgent: string, platform = ''): SupportSystem {
   return 'other';
 }
 
-/** The installer to download for `system` (Linux: the AppImage), or null for `other`. */
+/**
+ * The installer to download for `system`, or null for `other`. Linux gets the Debian package:
+ * it installs Chromium's sandbox helper, which an AppImage cannot use on recent Ubuntu (and the
+ * app refuses to run without its sandbox).
+ */
 export function downloadUrl(system: SupportSystem): string | null {
   switch (system) {
     case 'windows':
@@ -43,7 +47,7 @@ export function downloadUrl(system: SupportSystem): string | null {
     case 'mac':
       return SUPPORT_RELEASES + SUPPORT_DOWNLOADS.mac;
     case 'linux':
-      return SUPPORT_RELEASES + SUPPORT_DOWNLOADS.linux;
+      return SUPPORT_RELEASES + SUPPORT_DOWNLOADS.linuxDeb;
     default:
       return null;
   }
@@ -54,8 +58,8 @@ export function allDownloads(): [string, string][] {
   return [
     ['Windows', SUPPORT_RELEASES + SUPPORT_DOWNLOADS.windows],
     ['macOS', SUPPORT_RELEASES + SUPPORT_DOWNLOADS.mac],
-    ['Linux (AppImage)', SUPPORT_RELEASES + SUPPORT_DOWNLOADS.linux],
     ['Linux (Debian, Ubuntu)', SUPPORT_RELEASES + SUPPORT_DOWNLOADS.linuxDeb],
+    ['Linux (AppImage)', SUPPORT_RELEASES + SUPPORT_DOWNLOADS.linux],
   ];
 }
 

@@ -35,7 +35,7 @@ describe('the support landing page', () => {
   it("offers the visitor's installer from the latest release, and all of them in a list", () => {
     expect(downloadUrl('windows')).toMatch(/releases\/latest\/download\/.+\.exe$/);
     expect(downloadUrl('mac')).toMatch(/\.dmg$/);
-    expect(downloadUrl('linux')).toMatch(/\.AppImage$/);
+    expect(downloadUrl('linux')).toMatch(/\.deb$/);
     expect(downloadUrl('other')).toBeNull();
     expect(allDownloads()).toHaveLength(4);
     for (const [, url] of allDownloads()) {

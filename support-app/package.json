@@ -11,7 +11,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "start": "node scripts/build.mjs && electron .",
-    "package": "node scripts/build.mjs && electron-builder --config electron-builder.yml"
+    "package": "node scripts/build.mjs && electron-builder --config electron-builder.json --publish never",
+    "package:dir": "node scripts/build.mjs && electron-builder --config electron-builder.json --dir --publish never"
   },
   "devDependencies": {
     "electron": "44.9.3",

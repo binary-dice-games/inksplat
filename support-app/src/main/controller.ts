@@ -64,6 +64,9 @@ const MAC_SCREEN_SETTINGS =
  */
 const LEAVE_MS = 250;
 
+/** How long the overlay may take to load before sharing stops. */
+const OVERLAY_MS = 5000;
+
 /** The screens while a session is running (something is connected or shared). */
 const ACTIVE: ReadonlySet<Screen> = new Set([
   'connecting',
@@ -585,7 +588,11 @@ export class Controller {
     });
     win.on('hide', gone);
     win.webContents.on('render-process-gone', gone);
+    // The border must be seen while sharing (I2): an overlay that is not up in time stops it.
+    const late = setTimeout(gone, OVERLAY_MS);
+    win.on('closed', () => clearTimeout(late));
     win.webContents.once('did-finish-load', () => {
+      clearTimeout(late);
       if (this.overlay !== win || !this.session) {
         return;
       }

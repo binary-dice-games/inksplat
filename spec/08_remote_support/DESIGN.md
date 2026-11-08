@@ -374,7 +374,7 @@ the site's dependencies), TypeScript built with esbuild like the viewer.
 | Control renderer | `support-app/src/control/` | Connecting, consent, macOS permission help, bar, stopped, errors |
 | Preloads | `support-app/src/preload/*.ts` | `support.onState`, `support.allow()`, `support.deny()`, `support.stop()`, `support.nextDisplay()`, `support.openScreenSettings()`; port hand-over |
 | Strings | `support-app/src/strings.ts` | All texts, one table per language |
-| Packaging | `support-app/electron-builder.yml` | Installers, protocol, signing, update feed |
+| Packaging | `support-app/electron-builder.json` | Installers, protocol, signing, update feed |
 
 The app's version is its own (`support-app/package.json`, semver); it records the
 `packages/defaults` `PROTOCOL` it was built with and refuses a host with another one with
@@ -386,7 +386,7 @@ The app's version is its own (`support-app/package.json`, semver); it records th
 |---|---|---|
 | Windows 10 2004+ / 11 | NSIS, per user, no admin rights, x64 and arm64 | Registers the protocol in HKCU; Authenticode signed so SmartScreen does not scare the person |
 | macOS 12+ | DMG, universal | Developer ID signed and notarized; `NSScreenCaptureUsageDescription` set |
-| Linux | AppImage and `.deb`, x64 | `.desktop` file with `x-scheme-handler/inksplat-support` |
+| Linux | `.deb` (offered first) and AppImage, x64 | `.desktop` file with `x-scheme-handler/inksplat-support`; the `.deb` installs Chromium's sandbox helper, which an AppImage cannot use on Ubuntu 24.04 and later (and the app refuses `--no-sandbox`) |
 
 Updates (Windows and macOS; Linux builds do not update themselves, 7.3 R11): `electron-updater`
 from the project's GitHub Releases, checked when the app starts and
@@ -411,7 +411,7 @@ These hold whatever the helper, the network or a web page does. Each has a test 
 | # | Invariant |
 |---|---|
 | I1 | **No capture without consent** given by the person, in this app process, to this host (7.3 R9: the decision is a native dialog the renderers cannot click). |
-| I2 | **No capture without the signs:** while the capture runs, the bar and the border are on screen. If either window closes, crashes or hides, the main process destroys the session window, which ends the capture; a bar dragged off its display is moved back. |
+| I2 | **No capture without the signs:** while the capture runs, the bar and the border are on screen. If either window closes, crashes or hides, or the overlay is not up within 5 seconds, the main process destroys the session window, which ends the capture; a bar dragged off its display is moved back. |
 | I3 | **Stop always works:** one click, local, offline, whatever the session's state. |
 | I4 | **The helper cannot change what is captured:** no message starts, resumes or widens a capture (other display, audio, camera, a window); only the person's clicks do. |
 | I5 | **Show, never act:** no code path injects input, reads or writes the person's files, runs programs or opens URLs other than the fixed download page. |

@@ -42,6 +42,7 @@ inksplat_add_test(support_link tests/unit/support-link.test.ts)
 inksplat_add_test(support_displays tests/unit/support-displays.test.ts)
 inksplat_add_test(support_consent tests/unit/support-consent.test.ts)
 inksplat_add_test(support_allowlist tests/unit/support-allowlist.test.ts)
+inksplat_add_test(support_build tests/unit/support-build.test.ts)
 
 # Browser tests need Chrome (INKSPLAT_CHROME), see docs/building.md.
 inksplat_add_test(webrtc tests/e2e/webrtc.test.ts PROJECT e2e)
@@ -59,3 +60,7 @@ inksplat_add_test(still_refresh_chrome tests/e2e/still-refresh.test.ts PROJECT e
 if(NOT APPLE)
   inksplat_add_test(support_app tests/e2e/support-app.test.ts PROJECT e2e TIMEOUT 600)
 endif()
+
+# The packaged app: its fuses, its archive, and no code run through Node switches (packs an
+# unpacked build with electron-builder, so it takes a few minutes).
+inksplat_add_test(support_package tests/e2e/support-package.test.ts PROJECT e2e TIMEOUT 900)

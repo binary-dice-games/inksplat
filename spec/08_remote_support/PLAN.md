@@ -158,7 +158,7 @@ refused.
 
 **Goal:** installers for Windows, macOS and Linux, built in CI, published on a tag, with
 updates (DESIGN 6.3).
-**Deliverables:** `support-app/electron-builder.yml`; CMake target `support-app` (build) and
+**Deliverables:** `support-app/electron-builder.json`; CMake target `support-app` (build) and
 `support-package` (installers); CI job building and running the app's tests on the three
 systems; `.github/workflows/support-release.yml` on `support-v*` tags with signing secrets
 (skipped with a warning when absent); `electron-updater` wired; landing page links to the fixed
@@ -168,7 +168,17 @@ installers; a packaging check reads the fuses, the macOS entitlements and harden
 the protocol registration of each installer and fails on any difference from DESIGN 4.1; the
 updater refuses a build signed by another key (test certificate); `tests/unit/support-build.test.ts` checks the builder config (protocol, fuses,
 file names that the landing page links to).
-**Result:** _pending_
+**Result:** done, except signing and a real release (they need the certificates and the
+`support-release` environment, which only a maintainer can set up) and CI on macOS and Windows
+(not runnable from here). The configuration is `support-app/electron-builder.json` (JSON, so a
+test reads it without a YAML parser); the app is bundled, so the archive holds only `dist/` and
+`package.json`. `tests/unit/support-build.test.ts` checks the configuration and
+`tests/e2e/support-package.test.ts` packs an unpacked build and checks the real binary: fuses,
+archive, and that `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` and a debugging port run nothing. The
+release workflow uploads to a **draft** release a maintainer publishes. Linux: the landing page
+offers the `.deb` first (DESIGN 6.3); Linux builds do not update themselves. The packaged app
+could not be started here (a root container needs `--no-sandbox`, which a packaged app refuses):
+manual checklist.
 
 ## 8. Docs and manual checks
 
@@ -179,7 +189,10 @@ Documentation" row); README overview line and layout row for `support-app/`;
 displays, sleep and Wi-Fi change, macOS permission first run, Wayland, the delay of marks on a slow link); tutorial
 page section for the person helped; CHANGELOG; `spec/INDEX.md` status.
 **Tests:** the manual checklist on Windows 11, macOS 15 and Ubuntu (X11) at least.
-**Result:** _pending_
+**Result:** done: `docs/support-app.md` (and its README row), the README overview and layout,
+`docs/using-the-board.md`, `docs/building.md`, `docs/testing.md`, manual checklist items 77 to
+90, the tutorial's section 15, the privacy policy, CHANGELOG and `spec/INDEX.md`. Open: the
+manual checklist on Windows 11, macOS 15 and Ubuntu, and pictures for the landing page.
 
 ## Completion Criteria
 
