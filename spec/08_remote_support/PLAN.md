@@ -3,22 +3,21 @@
 Design: `spec/08_remote_support/DESIGN.md`. Follow the steps in order; update this plan before
 diverging from it and record each step's result when done.
 
-## 1. Spike: Electron capture, overlay and exclusion
+## 1. Spike: Electron capture and overlay
 
 **Goal:** settle the risks of DESIGN section 8 before product code: a guest in Electron shares
 a display through `getDisplayMedia` answered by `setDisplayMediaRequestHandler`; a
-transparent, click-through, always-on-top overlay window draws over it; the overlay is (or is
-not) excluded from the capture on Windows, macOS 14, macOS 15+ and Linux X11/Wayland.
+transparent, click-through, always-on-top overlay window draws over it and appears in the
+capture on Windows, macOS 14, macOS 15+ and Linux X11/Wayland.
 **Deliverables:** `support-app/` workspace skeleton (Electron pinned, esbuild build, one main
-file, one page) kept as the base of step 3; a results note appended here: exclusion per system,
-the source id mapping from `screen.Display` to `desktopCapturer`, the macOS permission and
-relaunch path, Wayland behaviour, and whether a test pattern drawn by the overlay can be found
-in the captured frames (DESIGN 4.2) on each system. The results fill the fallback table of
-DESIGN 4.2 before step 2.
+file, one page) kept as the base of step 3; a results note appended here: the overlay in the
+capture per system, the delay of a mark from overlay to the far end's video, the source id
+mapping from `screen.Display` to `desktopCapturer`, the macOS permission and relaunch path,
+Wayland behaviour.
 **Tests:** a Playwright `_electron` test (`tests/e2e/support-spike.test.ts`, `PROJECT e2e`,
-Linux under Xvfb in CI): the app starts, captures a display without a picker, and the overlay
-window exists, is transparent and ignores mouse events; on Linux the test pattern is found in
-the capture. Exclusion on Windows and macOS is checked by hand and recorded.
+Linux under Xvfb in CI): the app starts, captures a display without a picker, the overlay
+window exists, is transparent and ignores mouse events, and a coloured mark drawn on it is
+found in the captured frames. Windows and macOS are checked by hand and recorded.
 **Result:** _pending_
 
 ## 2. Data model and host support mode
@@ -27,14 +26,13 @@ the capture. Exclusion on Windows and macOS is checked by hand and recorded.
 **Deliverables:** `packages/defaults`: `Stage.mode`, `client`/`v` in the `screen` offer,
 `SUPPORT_SCHEME`, `supportLink`; `ShareHost` `mode: 'support'` (lock after the first guest,
 auto-active offer, aspect from the offer, guest locked to pointer-only, unlock on leave,
-marks mode and frame rate (DESIGN 4.2); whiteboard `localMarks`/`setLocalMarks` (header
-records the change)); TSDoc.
+frame rate raised while marks show (DESIGN 4.2); whiteboard `localMarks` option (header
+records the change)); presenter page passes `localMarks: false`; TSDoc.
 **Tests:** `tests/unit/defaults.test.ts` (stage `mode` cleaning, offer with `client`/`v`,
-`supportLink`, `marks` in the offer); `tests/unit/share-host.test.ts` (support mode: first
+`supportLink`); `tests/unit/share-host.test.ts` (support mode: first
 offer active, aspect, second guest refused or removed, guest drawing refused, unlock and rejoin,
-`setLocalMarks` follows `marks`, frame rate raised while marks show in `video` mode); the
-whiteboard's `localMarks` option and `setLocalMarks` (marks are sent but not drawn locally;
-remote marks still drawn) in `tests/unit/whiteboard-pointer-modes.test.ts`.
+frame rate raised while marks show); the whiteboard's `localMarks` option (marks are sent but
+not drawn locally; remote marks still drawn) in `tests/unit/whiteboard-pointer-modes.test.ts`.
 **Result:** _pending_
 
 ## 3. Presenter page support mode and landing page
@@ -70,16 +68,14 @@ reconnects without asking again.
 
 **Goal:** the helper's cursor, laser, pings and emotes appear on the person's screen in the
 right place (DESIGN 3.2, 4).
-**Deliverables:** overlay window per shared display (click-through, on top, capture
-protection), session proxy over a `MessagePort`, read-only whiteboard with frame = display,
-border; recreated on **Show my other screen** and on display changes; the marks check (test
-pattern, frame reading, fallback table) and `marks` in the offer (DESIGN 4.2).
+**Deliverables:** overlay window per shared display (click-through, on top, part of the
+capture), session proxy over a `MessagePort`, read-only whiteboard with frame = display,
+border; recreated on **Show my other screen** and on display changes.
 **Tests:** e2e in `tests/e2e/support-app.test.ts`: the helper's `ping`/laser/emote at a board
 point appears in the overlay's DOM at the matching display position (within 2 px after
 scaling); the overlay ignores mouse events; switching display moves the overlay and changes the
-stage aspect; on Linux the check reports `video` and the helper's board then draws no laser
-of its own. Unit: frame-to-display mapping with scale factors; the pattern test on synthetic
-pixels (found, absent, scaled, compressed colours) in `tests/unit/support-marks-check.test.ts`.
+stage aspect; a laser mark drawn on the overlay reaches the helper's video while the
+helper's board draws none of its own. Unit: frame-to-display mapping with scale factors.
 **Result:** _pending_
 
 ## 6. Packaging, CI and release
@@ -102,7 +98,7 @@ file names that the landing page links to).
 **Deliverables:** `docs/support-app.md` (build, run, package, sign; README "Further
 Documentation" row); README overview line and layout row for `support-app/`;
 `docs/using-the-board.md` support section; `docs/manual-testing.md` items (each system, two
-displays, sleep and Wi-Fi change, macOS permission first run, Wayland, exclusion); tutorial
+displays, sleep and Wi-Fi change, macOS permission first run, Wayland, the delay of marks on a slow link); tutorial
 page section for the person helped; CHANGELOG; `spec/INDEX.md` status.
 **Tests:** the manual checklist on Windows 11, macOS 15 and Ubuntu (X11) at least.
 **Result:** _pending_
@@ -115,8 +111,7 @@ page section for the person helped; CHANGELOG; `spec/INDEX.md` status.
 - Nothing is captured before **Allow**; the border and **Stop** are always visible while it is.
 - The helper's cursor, laser, pings and emotes appear on the person's screen where the helper
   put them, and never take the person's clicks.
-- The helper sees each mark once: drawn at once where the overlay is left out of the capture,
-  only in the video where it is not.
+- The helper sees each mark once, in the video; the helper's board draws none of its own.
 - Only one person can join a support session; ordinary sessions are unchanged.
 - All tests above pass in CI on Linux, macOS and Windows; the manual checklist is done on the
   three systems.
