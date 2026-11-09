@@ -48,10 +48,29 @@ npm run package:dir -w support-app             # an unpacked build only (no inst
 | macOS 12+ | `inksplat-Support.dmg` (universal) | Hardened runtime; asks for Screen Recording once |
 | Linux | `inksplat-Support.deb`, `inksplat-Support.AppImage` | The `.deb` is the one offered: an AppImage cannot use Chromium's sandbox on Ubuntu 24.04 and later, and the app refuses to run without it |
 
-Unsigned builds work for testing but frighten the people the app is for. Signing uses
-electron-builder's variables: `CSC_LINK` and `CSC_KEY_PASSWORD` (the Windows code signing or
-Apple Developer ID certificate), and for notarization `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`
-and `APPLE_TEAM_ID`.
+Unsigned builds work for testing but frighten the people the app is for. See Signing below.
+
+## Signing
+
+The release workflow signs when these secrets are set in the `support-release` environment
+(Settings → Environments); without them it builds unsigned and says so in the log.
+
+| Secret | What it is |
+|---|---|
+| `MAC_CSC_LINK` | The **Developer ID Application** certificate with its private key, exported from Keychain Access as `.p12`, then base64 (`base64 -i cert.p12 \| pbcopy`) |
+| `MAC_CSC_KEY_PASSWORD` | The password chosen when exporting the `.p12` |
+| `APPLE_ID` | The Apple Account of the developer team, for notarization |
+| `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password of that account (account.apple.com → Sign-In and Security) |
+| `APPLE_TEAM_ID` | The team's ten-character ID (developer.apple.com → Membership) |
+| `WIN_CSC_LINK` | A Windows code signing certificate as base64 of a `.pfx` |
+| `WIN_CSC_KEY_PASSWORD` | Its password |
+
+macOS needs the Apple Developer Program; with the certificate and the notarization secrets the
+`.dmg` is signed, notarized and opens without a warning. Windows code signing certificates
+issued today keep their key on a hardware token or a cloud service and cannot be exported as a
+`.pfx`; for those, electron-builder signs through the service instead (for example Microsoft's
+Trusted Signing with `win.azureSignOptions`), which the workflow does not do yet. Linux packages
+are not signed.
 
 ## Release
 

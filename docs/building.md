@@ -13,7 +13,8 @@ It runs on **Linux, macOS and Windows**.
 | Xvfb | any | Linux without a display: the support app's tests ([support-app.md](support-app.md)) |
 
 Configuring runs `npm ci` (or `npm install` without a lock file) when
-`node_modules/` is missing.
+`node_modules/` is missing or `package-lock.json` is newer than what was installed (after a pull
+or a branch switch that changed the dependencies).
 
 ## Build, check and test
 

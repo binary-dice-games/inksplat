@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- MIT License © 2026 Binary Dice Games -->
+<!-- The hardened runtime's exceptions inksplat Support needs: only JIT for V8. No library
+     validation exception and no DYLD environment variables (spec/08_remote_support DESIGN 7.3 R14). -->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+  </dict>
+</plist>
