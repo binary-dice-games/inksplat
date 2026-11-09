@@ -1,7 +1,16 @@
 // @vitest-environment jsdom
 // MIT License © 2026 Binary Dice Games
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cleanItem, cleanUrl, createWhiteboard, frameAdapter } from '@inksplat/collab-whiteboard';
+import {
+  LINK_ICON_ORIGIN,
+  cleanItem,
+  cleanUrl,
+  createWhiteboard,
+  frameAdapter,
+  linkIconOf,
+} from '@inksplat/collab-whiteboard';
 import type { PreparedFile } from '@inksplat/collab-whiteboard';
 import { TestRoom } from '../support/rooms';
 import { until } from '../support/wait';
@@ -53,6 +62,42 @@ describe('web addresses', () => {
     expect(cleanItem({ ...link, size: 5 })).toBeNull();
     expect(cleanItem({ ...link, size: 5000 })).toBeNull();
     expect(cleanItem({ ...link, extra: 'x' })).not.toHaveProperty('extra');
+  });
+});
+
+describe('site icons', () => {
+  it('asks the icon service for the site name only', () => {
+    expect(linkIconOf('https://www.example.com/a/secret?token=1#x')).toBe(
+      `${LINK_ICON_ORIGIN}/ip3/www.example.com.ico`,
+    );
+    expect(linkIconOf('http://docs.Python.org/3/')).toBe(
+      `${LINK_ICON_ORIGIN}/ip3/docs.python.org.ico`,
+    );
+  });
+
+  it('never sends a name that is not public', () => {
+    for (const url of [
+      'http://192.168.1.10/admin',
+      'http://[::1]:8080/',
+      'http://localhost:3000/',
+      'http://intranet/wiki',
+      'http://printer.local/',
+      'https://build.corp/job/1',
+      'javascript:alert(1)',
+      null,
+    ]) {
+      expect(linkIconOf(url), String(url)).toBeNull();
+    }
+  });
+
+  it('is allowed by the img-src of the pages that show the board', () => {
+    for (const page of ['index.html', 'present.html']) {
+      const html = readFileSync(
+        join(import.meta.dirname, '..', '..', 'viewer', 'src', page),
+        'utf8',
+      );
+      expect(/img-src ([^;"]+)/.exec(html)?.[1]?.split(/\s+/), page).toContain(LINK_ICON_ORIGIN);
+    }
   });
 });
 
@@ -133,6 +178,51 @@ describe('pinned things', () => {
     } finally {
       t.wb.destroy();
       t.room.close();
+    }
+  });
+
+  it('shows the site icon once it loads, and the globe when there is none', async () => {
+    const t = await setup();
+    try {
+      t.wb.addLink('https://example.org/page');
+      const badge = () => t.shadow().querySelector('.link-item .site-icon');
+      const image = badge()!.querySelector('image')!;
+      expect(image.getAttribute('href')).toBe(`${LINK_ICON_ORIGIN}/ip3/example.org.ico`);
+      expect(badge()!.getAttribute('opacity')).toBe('0');
+      image.dispatchEvent(new Event('load'));
+      expect(badge()!.getAttribute('opacity')).toBe('1');
+      // An icon that fails is dropped, and not asked for again on the next card of the site.
+      image.dispatchEvent(new Event('error'));
+      expect(badge()).toBeNull();
+      t.wb.addLink('https://example.org/other');
+      expect(t.shadow().querySelectorAll('.site-icon')).toHaveLength(0);
+      // A local address keeps the globe; saved pictures never point outside.
+      t.wb.addLink('https://example.net/');
+      t.wb.addLink('http://192.168.0.1/');
+      expect(t.shadow().querySelectorAll('.site-icon')).toHaveLength(1);
+      expect(t.wb.toSvg()).not.toContain(LINK_ICON_ORIGIN);
+    } finally {
+      t.wb.destroy();
+      t.room.close();
+    }
+  });
+
+  it('keeps the globe with linkIcons off', async () => {
+    const room = new TestRoom();
+    const host = await room.start();
+    const stage = box(800, 450);
+    const wb = createWhiteboard(stage, {
+      session: host,
+      adapter: frameAdapter(stage, () => 16 / 9),
+      linkIcons: false,
+    });
+    try {
+      wb.addLink('https://example.org/page');
+      expect(wb.element.shadowRoot!.querySelector('.link-item')).not.toBeNull();
+      expect(wb.element.shadowRoot!.querySelector('.site-icon')).toBeNull();
+    } finally {
+      wb.destroy();
+      room.close();
     }
   });
 

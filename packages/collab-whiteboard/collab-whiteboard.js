@@ -37,9 +37,11 @@
  * `setToolHints(false)` leaves it out. `localMarks: false` sends this person's laser, pings and
  * emotes without drawing them here (a support session shows them in the video instead,
  * spec/08_remote_support/DESIGN.md section 4.2). A link to a site of `EMBED_ORIGINS` (YouTube,
- * Vimeo, Loom, Google Drive, Figma) is drawn as a player, and its page shown in a sandboxed frame
+ * Vimeo, Loom, Google Drive, Figma, Google Maps, OpenStreetMap, Google Docs, Slides and Sheets,
+ * Spotify, Dailymotion) is drawn as a player, and its page shown in a sandboxed frame
  * under its see-through screen, as Excalidraw does with embeddables; a click lets the frame take the
- * pointer until a press outside it or Esc (`embeds: false` leaves the frames out).
+ * pointer until a press outside it or Esc (`embeds: false` leaves the frames out). Other link cards
+ * show their site's icon from `LINK_ICON_ORIGIN` (`linkIcons: false` keeps the drawn globe).
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -258,12 +260,96 @@ export function cleanUrl(value) {
  * inksplat: the origins whose players a link card shows embedded (as Excalidraw's embeddables do).
  * A page that uses the board allows exactly these in its `frame-src`.
  */
-export const EMBED_ORIGINS = Object.freeze(['https://www.youtube-nocookie.com', 'https://player.vimeo.com', 'https://www.loom.com', 'https://drive.google.com', 'https://embed.figma.com']);
+export const EMBED_ORIGINS = Object.freeze([
+  'https://www.youtube-nocookie.com',
+  'https://player.vimeo.com',
+  'https://www.loom.com',
+  'https://drive.google.com',
+  'https://embed.figma.com',
+  'https://www.google.com',
+  'https://www.openstreetmap.org',
+  'https://docs.google.com',
+  'https://open.spotify.com',
+  'https://geo.dailymotion.com',
+]);
 
 const EMBED_ID = /^[A-Za-z0-9_-]{4,128}$/;
 const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com']);
 const FIGMA_KINDS = { file: 'design', design: 'design', proto: 'proto', board: 'board', slides: 'slides', deck: 'deck' };
+const GOOGLE_HOST = /^(?:www\.|maps\.)?google\.(?:com|[a-z]{2}|co\.[a-z]{2}|com\.[a-z]{2})$/;
+const LAT_LNG = /^(-?\d{1,2}(?:\.\d{1,10})?),\s*(-?\d{1,3}(?:\.\d{1,10})?)$/;
+const GOOGLE_DOCS = {
+  document: { site: 'Google Docs', view: 'preview', published: 'pub?embedded=true', ratio: 1.3 },
+  presentation: { site: 'Google Slides', view: 'embed?start=false&loop=false', published: 'embed?start=false&loop=false', ratio: 569 / 960 },
+  spreadsheets: { site: 'Google Sheets', view: 'htmlview?widget=true&headers=false', published: 'pubhtml?widget=true&headers=false', ratio: 3 / 4 },
+};
+const SPOTIFY_KINDS = { track: 0.38, episode: 0.38, album: 0.88, playlist: 0.88, show: 0.88, artist: 0.88 };
 const embedCache = new Map();
+
+/** A latitude and longitude ("48.85,2.35") if both are in range, else null. */
+function latLng(value) {
+  const m = LAT_LNG.exec(value ?? '');
+  return m && Math.abs(Number(m[1])) <= 90 && Math.abs(Number(m[2])) <= 180 ? { lat: Number(m[1]), lng: Number(m[2]) } : null;
+}
+
+/**
+ * Google Maps: a place, a search or a point (`/maps/place/Name/@lat,lng,15z`, `/maps/search/words`,
+ * `/maps/@lat,lng,15z`, `?q=`, `?query=`, `?ll=`) as Google's keyless embedded map. Directions and
+ * short links (`maps.app.goo.gl`, whose place only the redirect knows) stay cards.
+ */
+function googleMap(u, path) {
+  const at = /^@(-?[\d.]+),(-?[\d.]+)(?:,(\d{1,2}(?:\.\d+)?)z)?/.exec(path.find((p) => p.startsWith('@')) ?? '');
+  const point = at ? latLng(`${at[1]},${at[2]}`) : null;
+  const word = (value) => {
+    const text = decodeSafe(String(value ?? '').replace(/\+/g, ' ')).trim();
+    return text && text.length <= 200 && !/[\u0000-\u001f]/.test(text) ? text : null;
+  };
+  let q = null;
+  if (path[1] === 'place' || path[1] === 'search') {
+    q = word(path[2]?.startsWith('@') ? '' : path[2]);
+  } else if (path[1] === 'dir') {
+    return null;
+  }
+  q = q ?? word(u.searchParams.get('q') ?? u.searchParams.get('query'));
+  const ll = latLng(u.searchParams.get('ll'));
+  if (!q && (point || ll)) {
+    const p = point ?? ll;
+    q = `${p.lat},${p.lng}`;
+  }
+  if (!q) {
+    return null;
+  }
+  const zoom = at?.[3] ? Math.round(Number(at[3])) : Number(u.searchParams.get('z'));
+  const params = new URLSearchParams({ q });
+  if (Number.isInteger(zoom) && zoom >= 1 && zoom <= 21) {
+    params.set('z', String(zoom));
+  }
+  params.set('output', 'embed');
+  return { src: `https://www.google.com/maps?${params}`, ratio: 3 / 4, site: 'Google Maps' };
+}
+
+/** OpenStreetMap: the view of `#map=zoom/lat/lon` (and a marker at `mlat`, `mlon`) as OSM's embedded map. */
+function openStreetMap(u) {
+  const hash = new URLSearchParams(u.hash.slice(1));
+  const view = /^(\d{1,2})\/(-?[\d.]+)\/(-?[\d.]+)$/.exec(hash.get('map') ?? '');
+  const centre = view ? latLng(`${view[2]},${view[3]}`) : null;
+  const marker = latLng(`${u.searchParams.get('mlat')},${u.searchParams.get('mlon')}`);
+  const c = centre ?? marker;
+  if (!c) {
+    return null;
+  }
+  const zoom = Math.min(19, Math.max(1, view ? Number(view[1]) : 15));
+  // The box a 800 x 600 pixel view at this zoom shows (256-pixel tiles).
+  const dx = (400 * 360) / (256 * 2 ** zoom);
+  const dy = ((300 * 360) / (256 * 2 ** zoom)) * Math.cos((c.lat * Math.PI) / 180);
+  const fix = (n, lo, hi) => Math.min(hi, Math.max(lo, n)).toFixed(5);
+  const bbox = [fix(c.lng - dx, -180, 180), fix(c.lat - dy, -85, 85), fix(c.lng + dx, -180, 180), fix(c.lat + dy, -85, 85)].join(',');
+  const params = new URLSearchParams({ bbox, layer: 'mapnik' });
+  if (marker) {
+    params.set('marker', `${marker.lat},${marker.lng}`);
+  }
+  return { src: `https://www.openstreetmap.org/export/embed.html?${params}`, ratio: 3 / 4, site: 'OpenStreetMap' };
+}
 
 /** Seconds from a YouTube-like time (`90`, `90s`, `1m30s`, `1h2m3s`), 0 when there is none. */
 function startSeconds(value) {
@@ -320,6 +406,38 @@ function embedOfUrl(u) {
     const key = id(q('resourcekey'));
     return { src: `https://drive.google.com/file/d/${path[2]}/preview${key ? `?resourcekey=${key}` : ''}`, ratio: 9 / 16, site: 'Google Drive' };
   }
+  if (GOOGLE_HOST.test(host) && (path[0] === 'maps' || (host.startsWith('maps.') && path.length === 0))) {
+    return googleMap(u, path[0] === 'maps' ? path : ['maps']);
+  }
+  if (host === 'openstreetmap.org' || host === 'www.openstreetmap.org') {
+    return openStreetMap(u);
+  }
+  if (host === 'docs.google.com') {
+    const parts = path[1] === 'u' ? [path[0], ...path.slice(3)] : path; // /document/u/1/d/ID: another account
+    const doc = Object.hasOwn(GOOGLE_DOCS, parts[0]) ? GOOGLE_DOCS[parts[0]] : null;
+    if (!doc || parts[1] !== 'd') {
+      return null;
+    }
+    const published = parts[2] === 'e';
+    const file = id(published ? parts[3] : parts[2]);
+    if (!file) {
+      return null;
+    }
+    const gid = /^\d{1,12}$/.exec(u.searchParams.get('gid') ?? new URLSearchParams(u.hash.slice(1)).get('gid') ?? '')?.[0];
+    const tab = parts[0] === 'spreadsheets' && gid ? `&gid=${gid}` : '';
+    return { src: `https://docs.google.com/${parts[0]}/d/${published ? `e/${file}/${doc.published}` : `${file}/${doc.view}`}${tab}`, ratio: doc.ratio, site: doc.site };
+  }
+  if (host === 'open.spotify.com') {
+    const parts = path[0]?.startsWith('intl-') || path[0] === 'embed' ? path.slice(1) : path;
+    if (Object.hasOwn(SPOTIFY_KINDS, parts[0]) && /^[A-Za-z0-9]{22}$/.test(parts[1] ?? '')) {
+      return { src: `https://open.spotify.com/embed/${parts[0]}/${parts[1]}`, ratio: SPOTIFY_KINDS[parts[0]], site: 'Spotify' };
+    }
+    return null;
+  }
+  if (host === 'dailymotion.com' || host === 'www.dailymotion.com' || host === 'dai.ly' || host === 'geo.dailymotion.com') {
+    const video = host === 'dai.ly' ? path[0] : host === 'geo.dailymotion.com' ? u.searchParams.get('video') : path[0] === 'embed' ? path[2] : path[0] === 'video' ? path[1] : null;
+    return /^x[0-9a-z]{3,20}$/.test(video ?? '') ? { src: `https://geo.dailymotion.com/player.html?video=${video}`, ratio: 9 / 16, site: 'Dailymotion' } : null;
+  }
   if ((host === 'figma.com' || host === 'www.figma.com') && FIGMA_KINDS[path[0]] && /^[A-Za-z0-9]{8,64}$/.test(path[1] ?? '')) {
     const node = /^[0-9]+[-:][0-9]+$/.test(q('node-id')) ? `&node-id=${q('node-id')}` : '';
     return { src: `https://embed.figma.com/${FIGMA_KINDS[path[0]]}/${path[1]}?embed-host=inksplat${node}`, ratio: 3 / 4, site: 'Figma' };
@@ -330,7 +448,8 @@ function embedOfUrl(u) {
 /**
  * inksplat: the player a web address is shown with on the board, or null when its site is not one
  * of {@link EMBED_ORIGINS} (it is then a plain card). The address of the player is made here from
- * the ids in the link (letters, digits, `-` and `_` only), never taken from the link as it is.
+ * the ids (letters, digits, `-` and `_` only), coordinates or search words (encoded as a query
+ * value) in the link, on a fixed address of the site, never taken from the link as it is.
  * @param {unknown} url a web address (cleaned by {@link cleanUrl} first)
  * @returns {{ src: string, ratio: number, site: string } | null} the player's address, its height
  *   over its width, and the name of the site
@@ -355,6 +474,32 @@ const EMBED_ALLOW = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
 
 /** The band over an embedded player (its pin and the site's name), as a fraction of its width. */
 const EMBED_BAND = 0.07;
+
+/**
+ * inksplat: where the icons of linked sites come from (DuckDuckGo's icon service: it sees the site's
+ * name, never the whole address, and the linked site itself is not contacted). A page that shows
+ * the board allows it in its `img-src`.
+ */
+export const LINK_ICON_ORIGIN = 'https://icons.duckduckgo.com';
+
+/**
+ * inksplat: the address of the icon of a link's site, or null for an address with no public name
+ * (an IP address, `localhost`, a name without a dot or a local one such as `printer.local`), whose
+ * name is not sent anywhere.
+ * @param {unknown} url a web address
+ * @returns {string | null}
+ */
+export function linkIconOf(url) {
+  const clean = cleanUrl(url);
+  if (!clean) {
+    return null;
+  }
+  const host = new URL(clean).hostname.toLowerCase();
+  if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(host) || /^[\d.]+$/.test(host) || /\.(?:local|localhost|internal|intranet|lan|home|corp|home\.arpa|test|invalid|example)$/.test(host)) {
+    return null;
+  }
+  return `${LINK_ICON_ORIGIN}/ip3/${host}.ico`;
+}
 
 /** The height of a link card over its width: that of its player and band, or 0.5 for a plain card. */
 const linkRatio = (item) => {
@@ -1816,6 +1961,8 @@ export class Whiteboard {
     this.embeds = options.embeds !== false; // inksplat: show the pages of links to EMBED_ORIGINS
     this.frames = new Map(); // item id -> {el, frame, url}: the frame of an embedded page
     this.activeFrame = null; // the id of the frame that takes the pointer, if any
+    this.linkIcons = options.linkIcons !== false; // inksplat: the icons of linked sites on their cards
+    this.badIcons = new Set(); // icon addresses that did not load
     this.frameClip = null; // the adapter's clip rectangle, the box of the frames' layer
     if (getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
@@ -3421,6 +3568,28 @@ export class Whiteboard {
   }
 
   /**
+   * @private inksplat: the site's icon over the globe of a link card, on a white square `size` wide
+   * centred on (cx, cy): shown once it has loaded, so the globe stays when there is none. Exports
+   * (`stills`), `linkIcons: false` and addresses with no public name keep the globe.
+   */
+  siteIcon(url, cx, cy, size) {
+    const href = this.linkIcons && !this.stills ? linkIconOf(url) : null;
+    if (!href || this.badIcons.has(href)) {
+      return [];
+    }
+    const badge = svgEl('g', { class: 'site-icon', opacity: 0, 'pointer-events': 'none' });
+    const pad = size * 0.14;
+    const image = svgEl('image', { href, x: cx - size / 2 + pad, y: cy - size / 2 + pad, width: size - 2 * pad, height: size - 2 * pad, preserveAspectRatio: 'xMidYMid meet' });
+    image.addEventListener('load', () => badge.setAttribute('opacity', 1));
+    image.addEventListener('error', () => {
+      this.badIcons.add(href); // not asked for again while the page is open
+      badge.remove();
+    });
+    badge.append(svgEl('rect', { x: cx - size / 2, y: cy - size / 2, width: size, height: size, rx: size * 0.2, fill: '#ffffff' }), image);
+    return [badge];
+  }
+
+  /**
    * @private What an embedded player is drawn with: a band with the site's name (where the pin is),
    * and under it a dark screen with a play button, the rectangle (class `embed-frame`) the page's
    * frame is put under. The screen is what exports, the magnifier and a board without embeds show;
@@ -3610,6 +3779,7 @@ export class Whiteboard {
         svgEl('circle', { cx: gx, cy: gy, r: h * 0.11, fill: 'none', stroke: '#ffffff', 'stroke-width': w * 0.01 }),
         svgEl('ellipse', { cx: gx, cy: gy, rx: h * 0.05, ry: h * 0.11, fill: 'none', stroke: '#ffffff', 'stroke-width': w * 0.008 }),
         svgEl('path', { d: `M${gx - h * 0.11} ${gy}h${h * 0.22}`, fill: 'none', stroke: '#ffffff', 'stroke-width': w * 0.008 }),
+        ...this.siteIcon(item.url, gx, gy, h * 0.24),
         label(fit(u.hostname.replace(/^www\./, ''), 26), left + w * 0.2, top + h * 0.215, w * 0.062, '#ffffff', 700),
         label(fit(path, 34), left + w * 0.06, top + h * 0.6, w * 0.054, '#2b2f36', 400),
         label(u.protocol === 'http:' ? 'http \u00b7 not encrypted' : 'Click to open', left + w * 0.06, top + h * 0.88, w * 0.045, '#60646c', 400),
