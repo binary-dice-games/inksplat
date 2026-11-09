@@ -135,6 +135,9 @@ describe('the packaged app', () => {
       expect(files).toContain(f);
     }
     expect(existsSync(join(res, 'app'))).toBe(false);
+    // On macOS and Windows electron-builder writes the feed only next to an updatable target
+    // (dmg or zip, nsis), which the release builds and this unpacked build does not.
+    if (process.platform !== 'linux') return;
     const feed = readFileSync(join(res, 'app-update.yml'), 'utf8');
     expect(feed).toMatch(/owner: binary-dice-games/);
     expect(feed).toMatch(/repo: inksplat/);
