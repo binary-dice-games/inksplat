@@ -5,6 +5,7 @@ inksplat_add_test(whiteboard_interaction tests/unit/whiteboard-interaction.test.
 inksplat_add_test(whiteboard_files tests/unit/whiteboard-files.test.ts)
 inksplat_add_test(whiteboard_pictures tests/unit/whiteboard-pictures.test.ts)
 inksplat_add_test(whiteboard_links tests/unit/whiteboard-links.test.ts)
+inksplat_add_test(whiteboard_embeds tests/unit/whiteboard-embeds.test.ts)
 inksplat_add_test(whiteboard_notes tests/unit/whiteboard-notes.test.ts)
 inksplat_add_test(whiteboard_threads tests/unit/whiteboard-threads.test.ts)
 inksplat_add_test(whiteboard_thread_split tests/unit/whiteboard-thread-split.test.ts)

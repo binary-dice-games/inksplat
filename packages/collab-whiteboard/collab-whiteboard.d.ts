@@ -230,6 +230,28 @@ export function cleanFileInfo(info: unknown): FileInfo | null;
 /** The address if it is a short http or https link, else null. */
 export function cleanUrl(value: unknown): string | null;
 
+/**
+ * The origins whose players a link card shows embedded. A page that shows the board must allow
+ * exactly these in the `frame-src` of its Content Security Policy.
+ */
+export const EMBED_ORIGINS: readonly string[];
+
+/** The player a link is shown with on the board. */
+export interface Embed {
+  /** The player's address, made from the ids in the link; its origin is one of {@link EMBED_ORIGINS}. */
+  src: string;
+  /** Height over width of the player. */
+  ratio: number;
+  /** The site's name (YouTube, Vimeo, Loom, Google Drive, Figma). */
+  site: string;
+}
+
+/**
+ * The player a web address is shown with (a YouTube or Vimeo video, a Loom, a Google Drive file, a
+ * Figma file), or null when the site is not one that is embedded (the link is then a plain card).
+ */
+export function embedOf(url: unknown): Embed | null;
+
 /** What {@link prepareFile} makes of a file. */
 export interface PreparedFile {
   /** The preview, a data URL. */
@@ -421,6 +443,12 @@ export interface WhiteboardOptions {
    * without drawing them (a support session shows them in the video instead).
    */
   localMarks?: boolean;
+  /**
+   * Show links to the sites of {@link EMBED_ORIGINS} as their players, in sandboxed frames under
+   * the drawings (a click on one lets it take the pointer); default true. False draws them as a
+   * still player that opens the page in a new tab when clicked.
+   */
+  embeds?: boolean;
   /** Show the speaking queue; default true. */
   turns?: boolean;
   /** Replaces {@link prepareFile} (tests, or a host with better previews). */
@@ -500,7 +528,8 @@ export class Whiteboard {
    */
   ping(at: { x: number; y: number }): string | null;
   /**
-   * Pins a web link (a card that opens the page when clicked); null when read only.
+   * Pins a web link (a card that opens the page when clicked, or the player of a site that
+   * {@link embedOf} knows, 400 units wide); null when read only.
    * @throws {WhiteboardError} when `url` is not an http or https address
    */
   addLink(url: string, at?: { x: number; y: number }): string | null;
