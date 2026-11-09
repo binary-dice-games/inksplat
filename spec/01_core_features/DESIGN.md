@@ -297,9 +297,14 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   not a screenshot. A click with the pointer tool, not at the end of a drag, opens `url` in a new
   tab with `noopener`. Links come from paste, a dropped `text/uri-list`, or `addLink()`.
 - **Embedded players** (as Excalidraw's embeddables). `embedOf(url)` maps a link to a known site
-  (YouTube, Vimeo, Loom, Google Drive, Figma) to its player's address, built from the ids in the
-  link (`[A-Za-z0-9_-]`, never the link as it is) on one of `EMBED_ORIGINS`; YouTube goes to
-  `youtube-nocookie.com`. It is derived from `url`, not stored, so the item format is unchanged
+  (YouTube, Vimeo, Loom, Google Drive, Figma, Google Maps, OpenStreetMap, Google Docs, Slides and
+  Sheets, Spotify, Dailymotion) to its player's address, built from the ids in the link
+  (`[A-Za-z0-9_-]`), its coordinates, or its search words as an encoded query value, never the link
+  as it is, on one of `EMBED_ORIGINS`; YouTube goes to `youtube-nocookie.com`. Google Maps uses
+  the keyless `www.google.com/maps?q=...&output=embed` (not an official API: the Embed API needs a
+  key a static site would publish); its short links only name the place behind a redirect, so they
+  stay cards. OpenStreetMap's view (`#map=zoom/lat/lon`) becomes the box of its official
+  `export/embed.html`. It is derived from `url`, not stored, so the item format is unchanged
   and an older peer still draws a card. Such a card is drawn as a player (a band with the site's
   name and the pin, then a screen of the player's ratio; `addLink` makes it 400 units wide), and
   the page is a sandboxed `<iframe>` (scripts, same origin, popups, presentation; referrer policy

@@ -242,13 +242,17 @@ export interface Embed {
   src: string;
   /** Height over width of the player. */
   ratio: number;
-  /** The site's name (YouTube, Vimeo, Loom, Google Drive, Figma). */
+  /**
+   * The site's name (YouTube, Vimeo, Loom, Google Drive, Figma, Google Maps, OpenStreetMap, Google
+   * Docs, Google Slides, Google Sheets, Spotify, Dailymotion).
+   */
   site: string;
 }
 
 /**
- * The player a web address is shown with (a YouTube or Vimeo video, a Loom, a Google Drive file, a
- * Figma file), or null when the site is not one that is embedded (the link is then a plain card).
+ * The player a web address is shown with (a YouTube, Vimeo or Dailymotion video, a Loom, a Google
+ * Drive, Docs, Slides, Sheets or Figma file, a Google Maps or OpenStreetMap map, a Spotify track,
+ * album, playlist or episode), or null when the site is not one that is embedded (the link is then a plain card).
  */
 export function embedOf(url: unknown): Embed | null;
 

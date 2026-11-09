@@ -83,6 +83,96 @@ describe('embedOf', () => {
     });
   });
 
+  it('shows Google Maps places, searches and points as the keyless embedded map', () => {
+    const map = (q: string, z = '') =>
+      `https://www.google.com/maps?q=${q}${z ? `&z=${z}` : ''}&output=embed`;
+    expect(
+      embedOf('https://www.google.com/maps/place/Eiffel+Tower/@48.8583701,2.2944813,17z/data=!3m1'),
+    ).toEqual({ src: map('Eiffel+Tower', '17'), ratio: 3 / 4, site: 'Google Maps' });
+    expect(embedOf('https://www.google.com/maps/@40.4168,-3.7038,14z')?.src).toBe(
+      map('40.4168%2C-3.7038', '14'),
+    );
+    expect(embedOf('https://www.google.de/maps/search/caf%C3%A9+near+me/@52.5,13.4,13z')?.src).toBe(
+      map('caf%C3%A9+near+me', '13'),
+    );
+    expect(embedOf('https://maps.google.com/?q=Madrid')?.src).toBe(map('Madrid'));
+    expect(embedOf('https://www.google.com/maps/search/?api=1&query=Big+Ben')?.src).toBe(
+      map('Big+Ben'),
+    );
+    // A search can hold any text: it is only ever a query value of the fixed address.
+    expect(embedOf('https://www.google.com/maps?q=%22%3E%3Cscript%3E&z=99')?.src).toBe(
+      map('%22%3E%3Cscript%3E'),
+    );
+  });
+
+  it('shows the view of an OpenStreetMap link, with its marker', () => {
+    const e = embedOf(
+      'https://www.openstreetmap.org/?mlat=48.8584&mlon=2.2945#map=17/48.8584/2.2945',
+    )!;
+    expect(e.site).toBe('OpenStreetMap');
+    const src = new URL(e.src);
+    expect(src.origin + src.pathname).toBe('https://www.openstreetmap.org/export/embed.html');
+    expect(src.searchParams.get('marker')).toBe('48.8584,2.2945');
+    const [w, s, east, n] = src.searchParams.get('bbox')!.split(',').map(Number);
+    expect(w).toBeLessThan(2.2945);
+    expect(east).toBeGreaterThan(2.2945);
+    expect(s).toBeLessThan(48.8584);
+    expect(n).toBeGreaterThan(48.8584);
+    expect(
+      new URL(
+        embedOf('https://www.openstreetmap.org/#map=15/48.8584/2.2945')!.src,
+      ).searchParams.has('marker'),
+    ).toBe(false);
+  });
+
+  it('knows Google Docs, Slides and Sheets, shared and published', () => {
+    expect(embedOf('https://docs.google.com/document/d/1AbCdEfGhIj/edit?usp=sharing')).toEqual({
+      src: 'https://docs.google.com/document/d/1AbCdEfGhIj/preview',
+      ratio: 1.3,
+      site: 'Google Docs',
+    });
+    expect(embedOf('https://docs.google.com/document/u/1/d/1AbCdEfGhIj/edit')?.src).toBe(
+      'https://docs.google.com/document/d/1AbCdEfGhIj/preview',
+    );
+    expect(embedOf('https://docs.google.com/presentation/d/1AbCdEfGhIj/edit#slide=id.p')).toEqual({
+      src: 'https://docs.google.com/presentation/d/1AbCdEfGhIj/embed?start=false&loop=false',
+      ratio: 569 / 960,
+      site: 'Google Slides',
+    });
+    expect(embedOf('https://docs.google.com/presentation/d/e/2PACX-1vAbC_dEf/pub')?.src).toBe(
+      'https://docs.google.com/presentation/d/e/2PACX-1vAbC_dEf/embed?start=false&loop=false',
+    );
+    expect(embedOf('https://docs.google.com/spreadsheets/d/1AbCdEfGhIj/edit#gid=123')).toEqual({
+      src: 'https://docs.google.com/spreadsheets/d/1AbCdEfGhIj/htmlview?widget=true&headers=false&gid=123',
+      ratio: 3 / 4,
+      site: 'Google Sheets',
+    });
+  });
+
+  it('knows Spotify and Dailymotion', () => {
+    expect(embedOf('https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=x')).toEqual({
+      src: 'https://open.spotify.com/embed/track/4cOdK2wGLETKBW3PvgPWqT',
+      ratio: 0.38,
+      site: 'Spotify',
+    });
+    expect(embedOf('https://open.spotify.com/intl-es/playlist/37i9dQZF1DXcBWIGoYBM5M')).toEqual({
+      src: 'https://open.spotify.com/embed/playlist/37i9dQZF1DXcBWIGoYBM5M',
+      ratio: 0.88,
+      site: 'Spotify',
+    });
+    for (const url of [
+      'https://www.dailymotion.com/video/x8abc12',
+      'https://dai.ly/x8abc12',
+      'https://www.dailymotion.com/embed/video/x8abc12',
+    ]) {
+      expect(embedOf(url), url).toEqual({
+        src: 'https://geo.dailymotion.com/player.html?video=x8abc12',
+        ratio: 9 / 16,
+        site: 'Dailymotion',
+      });
+    }
+  });
+
   it('leaves every other address a plain card', () => {
     for (const url of [
       'https://example.com/',
@@ -96,6 +186,18 @@ describe('embedOf', () => {
       'https://www.loom.com/share/not-hex',
       'https://drive.google.com/drive/folders/1AbC',
       'https://www.figma.com/community',
+      'https://www.google.com/maps/dir/Madrid/Toledo',
+      'https://www.google.com/maps',
+      'https://maps.app.goo.gl/abcdef',
+      'https://www.google.com/search?q=maps',
+      'https://www.google.evil.example/maps?q=x',
+      'https://www.openstreetmap.org/node/123',
+      'https://www.openstreetmap.org/#map=15/123/2',
+      'https://docs.google.com/forms/d/1AbCdEfGhIj/viewform',
+      'https://docs.google.com/document/d/bad!id/edit',
+      'https://open.spotify.com/user/someone',
+      'https://open.spotify.com/track/short',
+      'https://www.dailymotion.com/someone',
       'javascript:alert(1)',
       'not a url',
       null,
@@ -111,6 +213,11 @@ describe('embedOf', () => {
       'https://www.loom.com/share/0123456789abcdef',
       'https://drive.google.com/file/d/abcd/view',
       'https://www.figma.com/board/AbCdEf123456',
+      'https://www.google.com/maps/@1,2,3z',
+      'https://www.openstreetmap.org/#map=3/1/2',
+      'https://docs.google.com/spreadsheets/d/abcdef/edit',
+      'https://open.spotify.com/album/4cOdK2wGLETKBW3PvgPWqT',
+      'https://dai.ly/x8abc12',
     ]) {
       expect(EMBED_ORIGINS).toContain(new URL(embedOf(url)!.src).origin);
     }
