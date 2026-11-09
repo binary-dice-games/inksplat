@@ -72,6 +72,10 @@ issued today keep their key on a hardware token or a cloud service and cannot be
 Trusted Signing with `win.azureSignOptions`), which the workflow does not do yet. Linux packages
 are not signed.
 
+Without `MAC_CSC_LINK` the `.dmg` is signed ad hoc and without the hardened runtime: it is a test
+build only. On a Mac it opens after **System Settings → Privacy & Security → Open Anyway**; do
+not give it to the people you help.
+
 ## Release
 
 Set the version in `support-app/package.json`, then push a tag `support-v<version>`.
