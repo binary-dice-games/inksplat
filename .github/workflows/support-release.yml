@@ -43,17 +43,25 @@ jobs:
             echo "tag ${GITHUB_REF_NAME} does not match support-app version ${version}"; exit 1; }
       - run: npm run check
       - run: npx vitest run --project unit
+      # macOS signs with a Developer ID certificate (MAC_CSC_LINK), Windows with a code signing
+      # certificate (WIN_CSC_LINK); each job gets only its own (docs/support-app.md, Signing).
       - name: Signing
         shell: bash
         env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
         run: |
-          if [ -z "$CSC_LINK" ]; then
-            echo "::warning::No signing certificate: the installers are not signed."
+          case "${{ matrix.name }}" in
+            macos) cert="$MAC_CSC_LINK" ;;
+            windows) cert="$WIN_CSC_LINK" ;;
+            *) cert=none ;;
+          esac
+          if [ -z "$cert" ]; then
+            echo "::warning::No signing certificate for ${{ matrix.name }}: the installer is not signed."
             echo "CSC_IDENTITY_AUTO_DISCOVERY=false" >> "$GITHUB_ENV"
           fi
-          if [ "${{ matrix.name }}" = macos ] && [ -n "$APPLE_ID" ]; then
+          if [ "${{ matrix.name }}" = macos ] && [ -n "$MAC_CSC_LINK" ] && [ -n "$APPLE_ID" ]; then
             echo "NOTARIZE=-c.mac.notarize=true" >> "$GITHUB_ENV"
           fi
       - name: Package and attach to the draft release
@@ -61,8 +69,10 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          CSC_LINK: ${{ matrix.name == 'macos' && secrets.MAC_CSC_LINK || '' }}
+          CSC_KEY_PASSWORD: ${{ matrix.name == 'macos' && secrets.MAC_CSC_KEY_PASSWORD || '' }}
+          WIN_CSC_LINK: ${{ matrix.name == 'windows' && secrets.WIN_CSC_LINK || '' }}
+          WIN_CSC_KEY_PASSWORD: ${{ matrix.name == 'windows' && secrets.WIN_CSC_KEY_PASSWORD || '' }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
