@@ -120,6 +120,26 @@ export class SupportApp {
     );
   }
 
+  /** The primary display the app shares: its bounds (CSS pixels) and scale factor. */
+  display(): Promise<{ x: number; y: number; width: number; height: number; scale: number }> {
+    return this.app.evaluate(({ screen }) => {
+      const d = screen.getPrimaryDisplay();
+      return { ...d.bounds, scale: d.scaleFactor };
+    });
+  }
+
+  /**
+   * The width of the video the helper should get: the display in device pixels, reduced to the
+   * support video's size limit (1920 on the long side by default) as the host asks.
+   */
+  async videoWidth(limit = 1920): Promise<number> {
+    const d = await this.display();
+    const w = Math.round(d.width * d.scale);
+    const h = Math.round(d.height * d.scale);
+    const scale = Math.max(1, w / limit, h / limit);
+    return Math.round(w / scale);
+  }
+
   /** Whether the session window and the overlay exist. */
   windows(): Promise<{ session: boolean; overlay: boolean }> {
     return this.app.evaluate(() => {

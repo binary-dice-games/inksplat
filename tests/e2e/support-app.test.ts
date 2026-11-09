@@ -79,7 +79,7 @@ describe('inksplat Support', () => {
     expect(dialogs[0]).toContain('Pat');
     expect(dialogs[0]).toContain(code!);
     await expect.poll(() => status(page), { timeout: 30000 }).toMatch(/see .*screen/);
-    await expect.poll(() => videoWidth(page), { timeout: 30000 }).toBe(1280);
+    await expect.poll(() => videoWidth(page), { timeout: 30000 }).toBe(await app.videoWidth());
     // The frame is the person's display.
     expect(await page.evaluate(() => document.querySelector('#link') !== null)).toBe(true);
     expect(await app.windows()).toEqual({ session: true, overlay: true });
@@ -97,7 +97,7 @@ describe('inksplat Support', () => {
   it("draws the helper's cursor, pings and laser on the person's screen, where the helper put them", async () => {
     const { page, appUrl } = await helper();
     const app = await launch(appUrl, [1]);
-    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(1280);
+    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(await app.videoWidth());
     const overlay = await app.page('overlay.html');
     const windows = await app.app.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
@@ -105,10 +105,13 @@ describe('inksplat Support', () => {
         .map((w) => ({ focusable: w.isFocusable(), top: w.isAlwaysOnTop(), ...w.getBounds() })),
     );
     expect(windows).toHaveLength(1);
-    expect(windows[0]).toMatchObject({ focusable: false, top: true, x: 0, y: 0 });
+    expect(windows[0]).toMatchObject({ focusable: false, top: true });
     // The whole display (X11 without a window manager may leave a pixel off).
-    expect(Math.abs(windows[0]!.width - 1280)).toBeLessThanOrEqual(2);
-    expect(Math.abs(windows[0]!.height - 800)).toBeLessThanOrEqual(2);
+    const d = await app.display();
+    expect(Math.abs(windows[0]!.x - d.x)).toBeLessThanOrEqual(2);
+    expect(Math.abs(windows[0]!.y - d.y)).toBeLessThanOrEqual(2);
+    expect(Math.abs(windows[0]!.width - d.width)).toBeLessThanOrEqual(2);
+    expect(Math.abs(windows[0]!.height - d.height)).toBeLessThanOrEqual(2);
 
     // The helper takes the laser (the pointer's key twice) and clicks the middle of the frame.
     const stage = (await page.locator('#stage').boundingBox())!;
@@ -123,7 +126,7 @@ describe('inksplat Support', () => {
     expect(await overlay.locator('.cursor').first().textContent()).toContain('Pat');
     await page.mouse.down();
     await page.mouse.up();
-    // A ping, at the middle of the person's display (1280x800).
+    // A ping, at the middle of the person's display.
     const centre = await overlay.waitForFunction(
       () => {
         const wb = document.querySelector('collab-whiteboard');
@@ -136,8 +139,8 @@ describe('inksplat Support', () => {
       { timeout: 10000, polling: 20 },
     );
     const at = (await centre.jsonValue())!;
-    expect(Math.abs(at.x - 640)).toBeLessThan(3);
-    expect(Math.abs(at.y - 400)).toBeLessThan(3);
+    expect(Math.abs(at.x - d.width / 2)).toBeLessThan(3);
+    expect(Math.abs(at.y - d.height / 2)).toBeLessThan(3);
     // The helper's own board does not draw it: it comes back in the video.
     expect(await page.locator('.ping').count()).toBe(0);
 
@@ -156,7 +159,7 @@ describe('inksplat Support', () => {
   it('stops on Stop (the connection too), and asks again before sharing again', async () => {
     const { page, appUrl } = await helper();
     const app = await launch(appUrl, [1, 1]);
-    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(1280);
+    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(await app.videoWidth());
     const control = await app.control();
     await control.locator('button[data-action=stop]').click();
     await expect.poll(() => app.screen(), { timeout: 10000 }).toBe('stopped');
@@ -289,7 +292,7 @@ describe('inksplat Support', () => {
   it('refuses any other capture or device, and keeps its pages away from Node and the web', async () => {
     const { page, appUrl } = await helper();
     const app = await launch(appUrl, [1]);
-    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(1280);
+    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(await app.videoWidth());
     const session = await app.page('session.html');
     const control = await app.control();
     const tryMedia = (p: Page) =>
@@ -361,7 +364,7 @@ describe('inksplat Support', () => {
   it('ends when the helper ends the session', async () => {
     const { page, appUrl } = await helper();
     const app = await launch(appUrl, [1]);
-    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(1280);
+    await expect.poll(() => videoWidth(page), { timeout: 40000 }).toBe(await app.videoWidth());
     page.once('dialog', (d) => void d.accept());
     await page.locator('#end').click();
     await expect.poll(() => app.screen(), { timeout: 30000 }).toBe('ended');
