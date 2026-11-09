@@ -4,7 +4,8 @@
   "productName": "inksplat Support",
   "copyright": "Copyright \u00a9 2026 Binary Dice Games",
   "directories": {
-    "output": "release"
+    "output": "release",
+    "buildResources": "resources"
   },
   "files": ["dist/**", "package.json", "!**/node_modules/**"],
   "extraMetadata": {
@@ -68,8 +69,8 @@
     "category": "public.app-category.utilities",
     "hardenedRuntime": true,
     "gatekeeperAssess": false,
-    "entitlements": "build/entitlements.mac.plist",
-    "entitlementsInherit": "build/entitlements.mac.plist",
+    "entitlements": "resources/entitlements.mac.plist",
+    "entitlementsInherit": "resources/entitlements.mac.plist",
     "extendInfo": {
       "NSScreenCaptureUsageDescription": "The person helping you sees your screen only after you allow it, until you press Stop."
     }

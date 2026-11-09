@@ -48,8 +48,8 @@ beforeAll(async () => {
   work = mkdtempSync(join(tmpdir(), 'inksplat-support-package-'));
   // A copy of the app's project, so the build never touches the working tree.
   const project = join(work, 'project');
-  mkdirSync(join(project, 'build'), { recursive: true });
-  for (const f of ['package.json', 'electron-builder.json', 'build/entitlements.mac.plist']) {
+  mkdirSync(join(project, 'resources'), { recursive: true });
+  for (const f of ['package.json', 'electron-builder.json', 'resources/entitlements.mac.plist']) {
     copyFileSync(join(APP, f), join(project, f));
   }
   await buildSupportApp(join(project, 'dist'));

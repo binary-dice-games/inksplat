@@ -17,7 +17,7 @@ permissions:
 jobs:
   package:
     strategy:
-      fail-fast: true
+      fail-fast: false
       matrix:
         include:
           - { name: linux, runner: ubuntu-24.04, args: --linux }
