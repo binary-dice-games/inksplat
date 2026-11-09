@@ -294,7 +294,11 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   (`cleanUrl`); it carries no picture: every client draws the card (site name, path, tooltip with
   the whole address) from `url`, so a peer cannot show one address and open another. No page is
   fetched (a browser page cannot read other sites, and sessions have no server), so the card is
-  not a screenshot. A click with the pointer tool, not at the end of a drag, opens `url` in a new
+  not a screenshot. inksplat: the card shows the site's icon from DuckDuckGo's icon service
+  (`linkIconOf`, `LINK_ICON_ORIGIN`, allowed in the pages' `img-src`): it is sent only the host
+  name, never the path, and the linked site is not contacted; IP addresses and local names are not
+  sent. The icon shows once loaded (the drawn globe stays under it, and when it fails); exports
+  keep the globe. A click with the pointer tool, not at the end of a drag, opens `url` in a new
   tab with `noopener`. Links come from paste, a dropped `text/uri-list`, or `addLink()`.
 - **Embedded players** (as Excalidraw's embeddables). `embedOf(url)` maps a link to a known site
   (YouTube, Vimeo, Loom, Google Drive, Figma, Google Maps, OpenStreetMap, Google Docs, Slides and

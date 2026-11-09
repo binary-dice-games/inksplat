@@ -236,6 +236,18 @@ export function cleanUrl(value: unknown): string | null;
  */
 export const EMBED_ORIGINS: readonly string[];
 
+/**
+ * Where the icons of linked sites come from (DuckDuckGo's icon service, which sees only the site's
+ * name). A page that shows the board must allow it in the `img-src` of its Content Security Policy.
+ */
+export const LINK_ICON_ORIGIN: string;
+
+/**
+ * The address of the icon of a link's site on {@link LINK_ICON_ORIGIN}, or null for an address
+ * with no public name (an IP address, `localhost`, a local name), which is never sent anywhere.
+ */
+export function linkIconOf(url: unknown): string | null;
+
 /** The player a link is shown with on the board. */
 export interface Embed {
   /** The player's address, made from the ids in the link; its origin is one of {@link EMBED_ORIGINS}. */
@@ -453,6 +465,11 @@ export interface WhiteboardOptions {
    * still player that opens the page in a new tab when clicked.
    */
   embeds?: boolean;
+  /**
+   * Show the icon of a link's site on its card (from {@link LINK_ICON_ORIGIN}, once it has loaded);
+   * default true. False keeps the drawn globe. Saved pictures always have the globe.
+   */
+  linkIcons?: boolean;
   /** Show the speaking queue; default true. */
   turns?: boolean;
   /** Replaces {@link prepareFile} (tests, or a host with better previews). */

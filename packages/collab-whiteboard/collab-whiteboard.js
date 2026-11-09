@@ -40,7 +40,8 @@
  * Vimeo, Loom, Google Drive, Figma, Google Maps, OpenStreetMap, Google Docs, Slides and Sheets,
  * Spotify, Dailymotion) is drawn as a player, and its page shown in a sandboxed frame
  * under its see-through screen, as Excalidraw does with embeddables; a click lets the frame take the
- * pointer until a press outside it or Esc (`embeds: false` leaves the frames out).
+ * pointer until a press outside it or Esc (`embeds: false` leaves the frames out). Other link cards
+ * show their site's icon from `LINK_ICON_ORIGIN` (`linkIcons: false` keeps the drawn globe).
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -473,6 +474,32 @@ const EMBED_ALLOW = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
 
 /** The band over an embedded player (its pin and the site's name), as a fraction of its width. */
 const EMBED_BAND = 0.07;
+
+/**
+ * inksplat: where the icons of linked sites come from (DuckDuckGo's icon service: it sees the site's
+ * name, never the whole address, and the linked site itself is not contacted). A page that shows
+ * the board allows it in its `img-src`.
+ */
+export const LINK_ICON_ORIGIN = 'https://icons.duckduckgo.com';
+
+/**
+ * inksplat: the address of the icon of a link's site, or null for an address with no public name
+ * (an IP address, `localhost`, a name without a dot or a local one such as `printer.local`), whose
+ * name is not sent anywhere.
+ * @param {unknown} url a web address
+ * @returns {string | null}
+ */
+export function linkIconOf(url) {
+  const clean = cleanUrl(url);
+  if (!clean) {
+    return null;
+  }
+  const host = new URL(clean).hostname.toLowerCase();
+  if (!/^[a-z0-9-]+(?:\.[a-z0-9-]+)+$/.test(host) || /^[\d.]+$/.test(host) || /\.(?:local|localhost|internal|intranet|lan|home|corp|home\.arpa|test|invalid|example)$/.test(host)) {
+    return null;
+  }
+  return `${LINK_ICON_ORIGIN}/ip3/${host}.ico`;
+}
 
 /** The height of a link card over its width: that of its player and band, or 0.5 for a plain card. */
 const linkRatio = (item) => {
@@ -1934,6 +1961,8 @@ export class Whiteboard {
     this.embeds = options.embeds !== false; // inksplat: show the pages of links to EMBED_ORIGINS
     this.frames = new Map(); // item id -> {el, frame, url}: the frame of an embedded page
     this.activeFrame = null; // the id of the frame that takes the pointer, if any
+    this.linkIcons = options.linkIcons !== false; // inksplat: the icons of linked sites on their cards
+    this.badIcons = new Set(); // icon addresses that did not load
     this.frameClip = null; // the adapter's clip rectangle, the box of the frames' layer
     if (getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
@@ -3539,6 +3568,28 @@ export class Whiteboard {
   }
 
   /**
+   * @private inksplat: the site's icon over the globe of a link card, on a white square `size` wide
+   * centred on (cx, cy): shown once it has loaded, so the globe stays when there is none. Exports
+   * (`stills`), `linkIcons: false` and addresses with no public name keep the globe.
+   */
+  siteIcon(url, cx, cy, size) {
+    const href = this.linkIcons && !this.stills ? linkIconOf(url) : null;
+    if (!href || this.badIcons.has(href)) {
+      return [];
+    }
+    const badge = svgEl('g', { class: 'site-icon', opacity: 0, 'pointer-events': 'none' });
+    const pad = size * 0.14;
+    const image = svgEl('image', { href, x: cx - size / 2 + pad, y: cy - size / 2 + pad, width: size - 2 * pad, height: size - 2 * pad, preserveAspectRatio: 'xMidYMid meet' });
+    image.addEventListener('load', () => badge.setAttribute('opacity', 1));
+    image.addEventListener('error', () => {
+      this.badIcons.add(href); // not asked for again while the page is open
+      badge.remove();
+    });
+    badge.append(svgEl('rect', { x: cx - size / 2, y: cy - size / 2, width: size, height: size, rx: size * 0.2, fill: '#ffffff' }), image);
+    return [badge];
+  }
+
+  /**
    * @private What an embedded player is drawn with: a band with the site's name (where the pin is),
    * and under it a dark screen with a play button, the rectangle (class `embed-frame`) the page's
    * frame is put under. The screen is what exports, the magnifier and a board without embeds show;
@@ -3728,6 +3779,7 @@ export class Whiteboard {
         svgEl('circle', { cx: gx, cy: gy, r: h * 0.11, fill: 'none', stroke: '#ffffff', 'stroke-width': w * 0.01 }),
         svgEl('ellipse', { cx: gx, cy: gy, rx: h * 0.05, ry: h * 0.11, fill: 'none', stroke: '#ffffff', 'stroke-width': w * 0.008 }),
         svgEl('path', { d: `M${gx - h * 0.11} ${gy}h${h * 0.22}`, fill: 'none', stroke: '#ffffff', 'stroke-width': w * 0.008 }),
+        ...this.siteIcon(item.url, gx, gy, h * 0.24),
         label(fit(u.hostname.replace(/^www\./, ''), 26), left + w * 0.2, top + h * 0.215, w * 0.062, '#ffffff', 700),
         label(fit(path, 34), left + w * 0.06, top + h * 0.6, w * 0.054, '#2b2f36', 400),
         label(u.protocol === 'http:' ? 'http \u00b7 not encrypted' : 'Click to open', left + w * 0.06, top + h * 0.88, w * 0.045, '#60646c', 400),
