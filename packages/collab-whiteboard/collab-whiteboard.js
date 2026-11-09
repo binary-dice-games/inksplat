@@ -36,7 +36,10 @@
  * tool in hand (or the selection) for a few seconds after it changes; `toolHints: false` or
  * `setToolHints(false)` leaves it out. `localMarks: false` sends this person's laser, pings and
  * emotes without drawing them here (a support session shows them in the video instead,
- * spec/08_remote_support/DESIGN.md section 4.2).
+ * spec/08_remote_support/DESIGN.md section 4.2). A link to a site of `EMBED_ORIGINS` (YouTube,
+ * Vimeo, Loom, Google Drive, Figma) is drawn as a player, and its page shown in a sandboxed frame
+ * under its see-through screen, as Excalidraw does with embeddables; a click lets the frame take the
+ * pointer until a press outside it or Esc (`embeds: false` leaves the frames out).
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -248,6 +251,116 @@ export function cleanUrl(value) {
     return null;
   }
 }
+
+// ── Embedded pages ────────────────────────────────────────────────────────────
+
+/**
+ * inksplat: the origins whose players a link card shows embedded (as Excalidraw's embeddables do).
+ * A page that uses the board allows exactly these in its `frame-src`.
+ */
+export const EMBED_ORIGINS = Object.freeze(['https://www.youtube-nocookie.com', 'https://player.vimeo.com', 'https://www.loom.com', 'https://drive.google.com', 'https://embed.figma.com']);
+
+const EMBED_ID = /^[A-Za-z0-9_-]{4,128}$/;
+const YOUTUBE_HOSTS = new Set(['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtube-nocookie.com', 'www.youtube-nocookie.com']);
+const FIGMA_KINDS = { file: 'design', design: 'design', proto: 'proto', board: 'board', slides: 'slides', deck: 'deck' };
+const embedCache = new Map();
+
+/** Seconds from a YouTube-like time (`90`, `90s`, `1m30s`, `1h2m3s`), 0 when there is none. */
+function startSeconds(value) {
+  const m = /^(?:(\d{1,3})h)?(?:(\d{1,4})m)?(?:(\d{1,6})s?)?$/.exec(value ?? '');
+  return m ? Number(m[1] ?? 0) * 3600 + Number(m[2] ?? 0) * 60 + Number(m[3] ?? 0) : 0;
+}
+
+/** @param {URL} u */
+function embedOfUrl(u) {
+  const host = u.hostname.toLowerCase();
+  const path = u.pathname.split('/').filter(Boolean);
+  const q = (name) => u.searchParams.get(name) ?? '';
+  const id = (value) => (EMBED_ID.test(value ?? '') ? value : null);
+  if (YOUTUBE_HOSTS.has(host) || host === 'youtu.be') {
+    const list = id(q('list'));
+    let video = null;
+    let tall = false;
+    if (host === 'youtu.be') {
+      video = id(path[0]);
+    } else if (path[0] === 'watch') {
+      video = id(q('v'));
+    } else if (['embed', 'shorts', 'live', 'v'].includes(path[0]) && path[1] !== 'videoseries') {
+      video = id(path[1]);
+      tall = path[0] === 'shorts';
+    }
+    const start = startSeconds(q('t') || q('start'));
+    const params = new URLSearchParams();
+    if (video && list) {
+      params.set('list', list);
+    }
+    if (start > 0) {
+      params.set('start', String(start));
+    }
+    const query = params.toString() ? `?${params}` : '';
+    if (video) {
+      return { src: `https://www.youtube-nocookie.com/embed/${video}${query}`, ratio: tall ? 16 / 9 : 9 / 16, site: 'YouTube' };
+    }
+    if (list && (path[0] === 'playlist' || path[1] === 'videoseries')) {
+      return { src: `https://www.youtube-nocookie.com/embed/videoseries?list=${list}`, ratio: 9 / 16, site: 'YouTube' };
+    }
+    return null;
+  }
+  if (host === 'vimeo.com' || host === 'www.vimeo.com' || host === 'player.vimeo.com') {
+    const [video, hash] = host === 'player.vimeo.com' ? (path[0] === 'video' ? [path[1], q('h')] : []) : [path[0], path[1] ?? q('h')];
+    if (!/^\d{1,12}$/.test(video ?? '')) {
+      return null;
+    }
+    return { src: `https://player.vimeo.com/video/${video}${/^[0-9a-f]{4,32}$/.test(hash ?? '') ? `?h=${hash}` : ''}`, ratio: 9 / 16, site: 'Vimeo' };
+  }
+  if ((host === 'loom.com' || host === 'www.loom.com') && (path[0] === 'share' || path[0] === 'embed') && /^[0-9a-f]{16,64}$/.test(path[1] ?? '')) {
+    return { src: `https://www.loom.com/embed/${path[1]}`, ratio: 9 / 16, site: 'Loom' };
+  }
+  if (host === 'drive.google.com' && path[0] === 'file' && path[1] === 'd' && id(path[2])) {
+    const key = id(q('resourcekey'));
+    return { src: `https://drive.google.com/file/d/${path[2]}/preview${key ? `?resourcekey=${key}` : ''}`, ratio: 9 / 16, site: 'Google Drive' };
+  }
+  if ((host === 'figma.com' || host === 'www.figma.com') && FIGMA_KINDS[path[0]] && /^[A-Za-z0-9]{8,64}$/.test(path[1] ?? '')) {
+    const node = /^[0-9]+[-:][0-9]+$/.test(q('node-id')) ? `&node-id=${q('node-id')}` : '';
+    return { src: `https://embed.figma.com/${FIGMA_KINDS[path[0]]}/${path[1]}?embed-host=inksplat${node}`, ratio: 3 / 4, site: 'Figma' };
+  }
+  return null;
+}
+
+/**
+ * inksplat: the player a web address is shown with on the board, or null when its site is not one
+ * of {@link EMBED_ORIGINS} (it is then a plain card). The address of the player is made here from
+ * the ids in the link (letters, digits, `-` and `_` only), never taken from the link as it is.
+ * @param {unknown} url a web address (cleaned by {@link cleanUrl} first)
+ * @returns {{ src: string, ratio: number, site: string } | null} the player's address, its height
+ *   over its width, and the name of the site
+ */
+export function embedOf(url) {
+  const clean = cleanUrl(url);
+  if (!clean) {
+    return null;
+  }
+  if (!embedCache.has(clean)) {
+    if (embedCache.size >= 500) {
+      embedCache.delete(embedCache.keys().next().value);
+    }
+    embedCache.set(clean, embedOfUrl(new URL(clean)));
+  }
+  return embedCache.get(clean);
+}
+
+/** What an embedded page may do in its frame: run, be shown full screen, and open its site in a tab. */
+const EMBED_SANDBOX = 'allow-scripts allow-same-origin allow-presentation allow-popups allow-popups-to-escape-sandbox';
+const EMBED_ALLOW = 'autoplay; encrypted-media; fullscreen; picture-in-picture';
+
+/** The band over an embedded player (its pin and the site's name), as a fraction of its width. */
+const EMBED_BAND = 0.07;
+
+/** The height of a link card over its width: that of its player and band, or 0.5 for a plain card. */
+const linkRatio = (item) => {
+  const e = embedOf(item.url);
+  return e ? e.ratio + EMBED_BAND : 0.5;
+};
 
 /**
  * The description of a file shared on the board ({name, mime, bytes}) if it is valid, else null.
@@ -985,7 +1098,7 @@ function pinOffset(item) {
   if (item.kind !== 'image' && item.kind !== 'link' && item.kind !== 'note') {
     return 0;
   }
-  return pinMetrics(item, item.size * (item.kind === 'link' ? 0.5 : item.ratio)).y - item.y;
+  return pinMetrics(item, item.size * (item.kind === 'link' ? linkRatio(item) : item.ratio)).y - item.y;
 }
 
 /** Where the centre of an item really is: what is pinned turns about its pin, not about its centre. */
@@ -1071,7 +1184,7 @@ function hostFrame(item) {
     return { ...flat, h: item.size * item.ratio };
   }
   if (item.kind === 'link') {
-    return { ...flat, h: item.size * 0.5 };
+    return { ...flat, h: item.size * linkRatio(item) };
   }
   return item.kind === 'sticker' ? { ...flat, h: item.size } : null;
 }
@@ -1312,6 +1425,7 @@ const STRINGS = {
     magnify: 'Magnifier: the wheel changes how much it enlarges',
   },
   magnifier: 'Magnifier',
+  openPage: 'Open the page in a new tab',
   pen: 'Pen',
   text: 'Text note',
   sticker: 'Sticker (Shift+drag scales, Ctrl+drag turns)',
@@ -1372,6 +1486,7 @@ const STRINGS = {
     pin: 'Click to put a pin down, or on a thread to split it \u00b7 Press {key} again for another shape',
     arrow: 'Drag between any two points to tie a thread, or from a thread to split it \u00b7 Press {key} again for other heads',
     selected: 'Drag to move it \u00b7 Delete removes it \u00b7 Ctrl+C copies it \u00b7 Esc deselects',
+    embed: 'Click the player to use it \u00b7 A press outside or Esc gives the board back \u00b7 Drag the bar on top to move it',
     group: 'Drag any of them to move them all \u00b7 Delete removes them \u00b7 Ctrl+C / Ctrl+X copy or cut \u00b7 Esc deselects',
   },
   dragFile: 'Shift+drag it to copy it out, double click to save',
@@ -1458,6 +1573,14 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .pop button:hover, .pop button[aria-pressed="true"] { background: var(--wb-hover); }
 .pop .swatch { width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(128,128,128,.55); }
 .drag { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.embeds { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
+.embeds .embed { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #000; pointer-events: none; }
+.embeds .embed[hidden] { display: none; }
+.embeds .embed iframe { display: block; width: 100%; height: 100%; border: 0; pointer-events: none; }
+.embeds .embed.active { z-index: 1; pointer-events: auto; outline: 2px solid var(--wb-accent); }
+.embeds .embed.active iframe { pointer-events: auto; }
+svg.board.live-embeds .embed-frame { fill-opacity: 0; }
+svg.board.live-embeds .play { display: none; }
 .drag .proxy { position: absolute; left: 0; top: 0; pointer-events: none; }
 .drag.shift:not(.off) .proxy { pointer-events: auto; cursor: copy; }
 .toolbar button[data-key]::after { content: attr(data-key); position: absolute; right: 3px; bottom: 1px; font: 9px/1 system-ui, sans-serif; opacity: .6; pointer-events: none; }
@@ -1690,6 +1813,10 @@ export class Whiteboard {
     this.files = new Map(); // item id -> Blob of the file shared with the item
     this.motion = new Map(); // item id -> {blob, url} of an animated GIF drawn from its file
     this.proxies = new Map(); // item id -> {el, img}: what a copy is dragged from
+    this.embeds = options.embeds !== false; // inksplat: show the pages of links to EMBED_ORIGINS
+    this.frames = new Map(); // item id -> {el, frame, url}: the frame of an embedded page
+    this.activeFrame = null; // the id of the frame that takes the pointer, if any
+    this.frameClip = null; // the adapter's clip rectangle, the box of the frames' layer
     if (getComputedStyle(container).position === 'static') {
       container.style.position = 'relative';
     }
@@ -1708,6 +1835,7 @@ export class Whiteboard {
       return;
     }
     this.finishText();
+    this.activateFrame(null);
     this.tool = name;
     this.closeWheel(false);
     this.showLens(null);
@@ -1846,7 +1974,7 @@ export class Whiteboard {
 
   /**
    * Pins a web link on the board at (x, y) (content units): a card with its address that opens the
-   * page in a new tab when clicked.
+   * page in a new tab when clicked, or the player of a site of {@link EMBED_ORIGINS} (see {@link embedOf}).
    * @returns {string | null} the id of the item, null if it was refused (read only)
    * @throws {WhiteboardError} when `url` is not a http or https address
    */
@@ -1858,7 +1986,8 @@ export class Whiteboard {
     if (this.readOnlyFlag) {
       return null;
     }
-    const op = this.local(() => this.model.add({ kind: 'link', x: round1(at.x), y: round1(at.y), size: 200, url: clean, ...turned(this.tilt()) }));
+    const size = embedOf(clean) ? 400 : 200; // a player is shown larger than a card
+    const op = this.local(() => this.model.add({ kind: 'link', x: round1(at.x), y: round1(at.y), size, url: clean, ...turned(this.tilt()) }));
     return op ? op.item.id : null;
   }
 
@@ -2028,7 +2157,7 @@ export class Whiteboard {
   syncBoardClass() {
     const mode = this.pointerMode();
     const active = this.tool !== 'pointer' || !PASSIVE_MODES.has(mode);
-    this.board.setAttribute('class', `board ${this.tool}${mode === 'cursor' ? '' : ` ${mode}`}${active ? ' active' : ''}`);
+    this.board.setAttribute('class', `board ${this.tool}${mode === 'cursor' ? '' : ` ${mode}`}${active ? ' active' : ''}${this.embeds ? ' live-embeds' : ''}`);
     this.dragLayer.classList.toggle('off', active);
   }
 
@@ -2673,7 +2802,8 @@ export class Whiteboard {
     this.selbar = htmlEl('div', { class: 'selbar', role: 'toolbar', 'aria-label': 'Selected item', hidden: true });
     this.queueBox = htmlEl('div', { class: 'queue', role: 'group', 'aria-label': this.strings.queue, hidden: !this.turns });
     this.pagesBox = htmlEl('div', { class: 'pages', role: 'group', 'aria-label': this.strings.canvases, hidden: !this.showPages });
-    this.root.append(this.board, this.dragLayer, this.fxLayer, this.cursorLayer, this.lens, this.toolbarBox, this.popover, this.selbar, this.hintBox, this.tipBox, this.queueBox, this.pagesBox);
+    this.embedLayer = htmlEl('div', { class: 'embeds' });
+    this.root.append(this.embedLayer, this.board, this.dragLayer, this.fxLayer, this.cursorLayer, this.lens, this.toolbarBox, this.popover, this.selbar, this.hintBox, this.tipBox, this.queueBox, this.pagesBox);
     this.container.append(this.host);
     for (const [name, svg] of this.stickers) {
       this.defs.append(this.symbol(name, svg));
@@ -2728,14 +2858,14 @@ export class Whiteboard {
       return;
     }
     const before = this.tipKey;
-    const key = this.group.size > 0 ? 'group' : this.selected ? 'selected' : this.readOnlyFlag ? '' : this.tool === 'pointer' ? this.style.pointerMode : this.tool;
+    const key = this.group.size > 0 ? 'group' : this.selected && this.frames.has(this.selected) ? 'embed' : this.selected ? 'selected' : this.readOnlyFlag ? '' : this.tool === 'pointer' ? this.style.pointerMode : this.tool;
     if (key === before) {
       return;
     }
     this.tipKey = key;
     clearTimeout(this.tipTimer);
     // Letting go of a selection only hides its hint: the tool did not change.
-    const selection = (k) => k === 'group' || k === 'selected';
+    const selection = (k) => k === 'group' || k === 'selected' || k === 'embed';
     if (key === '' || (selection(before) && !selection(key))) {
       this.tipBox.classList.remove('on');
       return;
@@ -2931,6 +3061,11 @@ export class Whiteboard {
       path = `inset(${Math.max(0, clip.y)}px ${right}px ${bottom}px ${Math.max(0, clip.x)}px)`;
     }
     this.board.style.clipPath = path;
+    // The frames are clipped by their layer's box, not a clip-path: that would make the layer a
+    // stacking context, and the frame in use could not be raised over the drawings.
+    this.frameClip = clip ? { x: Math.max(0, clip.x), y: Math.max(0, clip.y), width: Math.max(0, clip.x + clip.width - Math.max(0, clip.x)), height: Math.max(0, clip.y + clip.height - Math.max(0, clip.y)) } : null;
+    const c = this.frameClip;
+    Object.assign(this.embedLayer.style, c ? { inset: 'auto', left: `${c.x}px`, top: `${c.y}px`, width: `${c.width}px`, height: `${c.height}px` } : { inset: '', left: '', top: '', width: '', height: '' });
     this.cursorLayer.style.clipPath = path;
     if (this.lensAt) {
       this.showLens(this.lensAt);
@@ -2951,6 +3086,7 @@ export class Whiteboard {
       this.moveCursor(c);
     }
     this.placeProxies();
+    this.placeFrames();
     this.placeSelbar();
     if (this.editing) {
       this.placeTextarea();
@@ -3051,6 +3187,7 @@ export class Whiteboard {
     }
     this.dropMotion();
     this.syncProxies();
+    this.syncFrames();
     this.renderToolbar();
   }
 
@@ -3125,6 +3262,95 @@ export class Whiteboard {
     }
   }
 
+  /**
+   * @private inksplat: every link card of a site in {@link EMBED_ORIGINS} on the canvas shown gets
+   * the site's player in a frame under its see-through screen, as Excalidraw shows embeddables. A
+   * frame is made once per card and address and kept while the card is moved, turned or scaled, so
+   * a video plays on; it goes with the card (or when the canvas changes). It is sandboxed, and lets
+   * the pointer through to the board until the card is clicked ({@link activateFrame}).
+   */
+  syncFrames() {
+    const want = new Map(this.embeds ? this.pageItems().filter((i) => i.kind === 'link' && embedOf(i.url)).map((i) => [i.id, i]) : []);
+    for (const [id, entry] of this.frames) {
+      if (want.get(id)?.url !== entry.url) {
+        entry.el.remove();
+        this.frames.delete(id);
+      }
+    }
+    for (const [id, item] of want) {
+      if (!this.frames.has(id)) {
+        const e = embedOf(item.url);
+        const el = htmlEl('div', { class: 'embed', 'data-id': id });
+        // YouTube refuses to play without the origin of the page as the referrer.
+        const frame = htmlEl('iframe', { src: e.src, title: `${e.site}: ${item.url}`, sandbox: EMBED_SANDBOX, allow: EMBED_ALLOW, allowfullscreen: true, referrerpolicy: 'strict-origin-when-cross-origin' });
+        el.append(frame);
+        this.embedLayer.append(el);
+        this.frames.set(id, { el, frame, url: item.url });
+      }
+    }
+    if (this.activeFrame && !this.frames.has(this.activeFrame)) {
+      this.activeFrame = null;
+    }
+    this.placeFrames();
+  }
+
+  /**
+   * @private Puts each frame where its card's screen is drawn now: from the screen's own matrix,
+   * so a card being dragged, turned or scaled (here or by a peer) carries its frame along.
+   */
+  placeFrames() {
+    if (this.frames.size === 0) {
+      return;
+    }
+    const base = typeof this.board.getScreenCTM === 'function' ? this.board.getScreenCTM() : null;
+    const ox = this.frameClip?.x ?? 0;
+    const oy = this.frameClip?.y ?? 0;
+    for (const [id, entry] of this.frames) {
+      const rect = this.nodes.get(id)?.node.querySelector('.embed-frame');
+      const item = this.model.get(id);
+      if (!rect || !item) {
+        entry.el.hidden = true;
+        continue;
+      }
+      const [x, y, w, h] = ['x', 'y', 'width', 'height'].map((k) => Number(rect.getAttribute(k)));
+      const own = base && typeof rect.getScreenCTM === 'function' ? rect.getScreenCTM() : null;
+      let m;
+      if (own) {
+        m = base.inverse().multiply(own);
+      } else {
+        // No layout (a test's DOM): the adapter's transform and the card's turn about its pin.
+        const a = ((item.rot ?? 0) * Math.PI) / 180;
+        const [cos, sin, px, py] = [Math.cos(a), Math.sin(a), item.x, item.y + pinOffset(item)];
+        const t = this.matrix;
+        const r = { a: cos, b: sin, c: -sin, d: cos, e: px - cos * px + sin * py, f: py - sin * px - cos * py };
+        m = { a: t.a * r.a + t.c * r.b, b: t.b * r.a + t.d * r.b, c: t.a * r.c + t.c * r.d, d: t.b * r.c + t.d * r.d, e: t.a * r.e + t.c * r.f + t.e, f: t.b * r.e + t.d * r.f + t.f };
+      }
+      entry.el.hidden = false;
+      entry.el.style.width = `${w}px`;
+      entry.el.style.height = `${h}px`;
+      entry.el.style.transform = `translate(${-ox}px, ${-oy}px) matrix(${m.a}, ${m.b}, ${m.c}, ${m.d}, ${m.e}, ${m.f}) translate(${x}px, ${y}px)`;
+    }
+  }
+
+  /**
+   * @private Lets the frame of the card `id` take the pointer (it is raised over the drawings), so
+   * its page can be used; null gives the pointer back to the board. A press anywhere outside the
+   * frame, Esc or another tool does that too.
+   */
+  activateFrame(id) {
+    const next = id && this.frames.has(id) ? id : null;
+    if (next === this.activeFrame) {
+      return;
+    }
+    if (this.activeFrame) {
+      this.frames.get(this.activeFrame)?.el.classList.remove('active');
+    }
+    this.activeFrame = next;
+    if (next) {
+      this.frames.get(next).el.classList.add('active');
+    }
+  }
+
   /** @private Starts dragging a copy of a picture or file out of the board. */
   dragOut(id, ev) {
     const f = this.fileOf(id);
@@ -3192,6 +3418,42 @@ export class Whiteboard {
     if (item.lock) {
       g.append(lockBadge((a.x + 2 * c.x + b.x) / 4, (a.y + 2 * c.y + b.y) / 4 - 4, item.lock));
     }
+  }
+
+  /**
+   * @private What an embedded player is drawn with: a band with the site's name (where the pin is),
+   * and under it a dark screen with a play button, the rectangle (class `embed-frame`) the page's
+   * frame is put under. The screen is what exports, the magnifier and a board without embeds show;
+   * on the live board it is see-through (but still takes the pointer), so the frame shows.
+   */
+  playerParts(item) {
+    const e = embedOf(item.url);
+    const w = item.size;
+    const band = w * EMBED_BAND;
+    const h = w * e.ratio;
+    const left = item.x - w / 2;
+    const top = item.y - (h + band) / 2;
+    const name = svgEl('text', { x: left + w * 0.03, y: top + band * 0.68, 'font-size': band * 0.55, fill: '#edeef0', 'font-weight': 600, 'font-family': 'system-ui, -apple-system, "Segoe UI", sans-serif' });
+    name.style.stroke = 'none';
+    name.textContent = e.site;
+    const title = svgEl('title');
+    title.textContent = item.url;
+    const cx = item.x;
+    const cy = top + band + h / 2;
+    const r = Math.min(w, h) * 0.12;
+    const play = svgEl('g', { class: 'play' });
+    play.append(
+      svgEl('circle', { cx, cy, r, fill: 'rgba(255,255,255,0.16)', stroke: '#ffffff', 'stroke-width': r * 0.08 }),
+      svgEl('path', { d: `M${cx - r * 0.32} ${cy - r * 0.45}L${cx + r * 0.5} ${cy}L${cx - r * 0.32} ${cy + r * 0.45}Z`, fill: '#ffffff' }),
+    );
+    return [
+      svgEl('rect', { class: 'paper', x: left, y: top, width: w, height: band, fill: '#26282b' }),
+      name,
+      svgEl('rect', { class: 'embed-frame', x: left, y: top + band, width: w, height: h, fill: '#000000' }),
+      play,
+      svgEl('rect', { x: left, y: top, width: w, height: h + band, fill: 'none', stroke: 'rgba(0,0,0,0.35)', 'stroke-width': 0.75, 'pointer-events': 'none' }),
+      title,
+    ];
   }
 
   /**
@@ -3318,6 +3580,8 @@ export class Whiteboard {
       body.append(text);
       const grip = this.canEdit(item) ? [gripNode(item)] : [];
       g.append(this.printNode(item, h, turn, [body, ...grip], item.color, shape));
+    } else if (item.kind === 'link' && embedOf(item.url)) {
+      g.append(this.printNode(item, item.size * linkRatio(item), turn, this.playerParts(item), null));
     } else if (item.kind === 'link') {
       // A card of the page's address, drawn here from the link itself (not from a picture the sender made).
       const u = new URL(item.url);
@@ -3389,7 +3653,7 @@ export class Whiteboard {
       } else if (i.kind === 'image') {
         add(centre(i).x, centre(i).y, (i.size * Math.max(1, i.ratio)) / 2);
       } else if (i.kind === 'link') {
-        add(centre(i).x, centre(i).y, i.size / 2);
+        add(centre(i).x, centre(i).y, (i.size * Math.max(1, linkRatio(i))) / 2);
       } else if (i.kind === 'note') {
         add(centre(i).x, centre(i).y, (i.size * Math.max(1, i.ratio)) / 2);
       } else if (i.kind === 'pin') {
@@ -4422,6 +4686,8 @@ export class Whiteboard {
     listen(this.board, 'pointercancel', (ev) => this.up(ev, true));
     listen(window, 'keydown', (ev) => this.key(ev), { capture: true });
     listen(this.board, 'click', (ev) => this.openLink(ev));
+    // A press anywhere on this page is outside the frame in use (the frame keeps its own presses).
+    listen(document, 'pointerdown', () => this.activateFrame(null), true);
     listen(window, 'paste', (ev) => this.pasted(ev));
     listen(this.board, 'dblclick', (ev) => {
       const hit = this.itemAt(ev);
@@ -4603,7 +4869,9 @@ export class Whiteboard {
       return;
     }
     const hit = this.itemAt(ev);
-    if (hit?.kind === 'link') {
+    if (hit?.kind === 'link' && this.frames.has(hit.id)) {
+      this.activateFrame(hit.id); // an embedded page: used where it is (its bar opens it in a tab)
+    } else if (hit?.kind === 'link') {
       this.openUrl(hit.url);
     }
   }
@@ -4649,6 +4917,7 @@ export class Whiteboard {
 
   /** @private */
   down(ev) {
+    this.activateFrame(null);
     if (ev.button > 0 || this.threading) {
       return;
     }
@@ -4939,6 +5208,9 @@ export class Whiteboard {
           parts.push(button(`${s.color}: ${COLOR_NAMES[i]}`, `<span class="swatch" style="background:${c}"></span>`, c.toLowerCase() === current.toLowerCase(), () => change({ [field]: c })));
         }
       };
+      if (item.kind === 'link' && this.frames.has(item.id)) {
+        parts.push(button(s.openPage, '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>', false, () => this.openUrl(item.url)));
+      }
       if (item.kind === 'note') {
         parts.push(button(s.copyText, '<svg viewBox="0 0 24 24"><path d="M8 8V4h12v12h-4M4 8h12v12H4z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>', false, () => this.copyNote(item)));
       }
@@ -5084,7 +5356,7 @@ export class Whiteboard {
       above = { x: b.x + b.width / 2, y: b.y - 22 };
       below = { x: above.x, y: b.y + b.height + 22 };
     } else {
-      const h = item.kind === 'pin' ? 0 : item.size * (item.kind === 'link' ? 0.5 : item.ratio);
+      const h = item.kind === 'pin' ? 0 : item.size * (item.kind === 'link' ? linkRatio(item) : item.ratio);
       const where = item.kind === 'pin' ? pinPoint(item, this.lookup) : item; // a pin on something is where it is drawn
       above = { x: where.x, y: where.y - h / 2 - 22 };
       below = { x: where.x, y: where.y + h / 2 + 22 };
@@ -5297,6 +5569,7 @@ export class Whiteboard {
       d.dy = dy;
       this.showPinDrag(d, dx, dy, p);
       this.nodes.get(it.id)?.node.setAttribute('transform', `translate(${dx} ${dy})`);
+      this.placeFrames();
       this.followThreads(it.kind === 'ink' ? it : { ...it, x: it.x + dx, y: it.y + dy, ...(it.kind === 'pin' ? { on: undefined } : {}) });
       this.sendDrag({ ids: [it.id], dx: round1(dx), dy: round1(dy) });
     }
@@ -5374,6 +5647,7 @@ export class Whiteboard {
       entry.node.replaceWith(node);
       entry.node = node;
     }
+    this.placeFrames();
   }
 
   /** @private */
@@ -5897,6 +6171,7 @@ export class Whiteboard {
         node?.removeAttribute('transform');
       }
     }
+    this.placeFrames();
     const resolve = (id) => {
       const i = this.model.get(id);
       return i && g.shown.has(id) ? this.movedBy(i, dx, dy) : i;
@@ -6249,6 +6524,8 @@ export class Whiteboard {
       this.resetZoom();
     } else if ((ev.key === 'Delete' || ev.key === 'Backspace') && ((this.selected && this.model.get(this.selected)) || this.group.size > 0)) {
       this.removeSelected();
+    } else if (ev.key === 'Escape' && this.activeFrame) {
+      this.activateFrame(null);
     } else if (ev.key === 'Escape' && (this.selected || this.group.size > 0)) {
       this.deselect();
     } else if (ev.key === 'Escape' && this.emoteWheel) {

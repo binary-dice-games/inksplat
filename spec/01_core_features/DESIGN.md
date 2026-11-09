@@ -296,6 +296,23 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   fetched (a browser page cannot read other sites, and sessions have no server), so the card is
   not a screenshot. A click with the pointer tool, not at the end of a drag, opens `url` in a new
   tab with `noopener`. Links come from paste, a dropped `text/uri-list`, or `addLink()`.
+- **Embedded players** (as Excalidraw's embeddables). `embedOf(url)` maps a link to a known site
+  (YouTube, Vimeo, Loom, Google Drive, Figma) to its player's address, built from the ids in the
+  link (`[A-Za-z0-9_-]`, never the link as it is) on one of `EMBED_ORIGINS`; YouTube goes to
+  `youtube-nocookie.com`. It is derived from `url`, not stored, so the item format is unchanged
+  and an older peer still draws a card. Such a card is drawn as a player (a band with the site's
+  name and the pin, then a screen of the player's ratio; `addLink` makes it 400 units wide), and
+  the page is a sandboxed `<iframe>` (scripts, same origin, popups, presentation; referrer policy
+  `strict-origin-when-cross-origin`, which YouTube needs) in an HTML layer *under* the SVG, whose
+  screen is see-through on the live board: drawings over a player stay on top, and exports, the
+  magnifier and `embeds: false` show the still screen. Each frame is kept per item and address
+  (moving it does not reload it) and placed from the screen rectangle's `getScreenCTM()`, so drag
+  previews (here and a peer's) carry it. It lets the pointer through until a click with the pointer
+  tool activates it (raised over the SVG); any press on the page, Esc or a tool change gives the
+  pointer back. The layer is clipped by its box, not a `clip-path`, which would make it a stacking
+  context and keep the active frame under the SVG. Pages that show the board allow exactly
+  `EMBED_ORIGINS` in their CSP `frame-src` (a test checks it); the support helper's page sets
+  `embeds: false`. Playback is not synchronised: each person plays their own copy.
 - **Zoom.** Lives in the frame adapter, not in the items: `zoomAt`/`panBy` change a view
   (scale 1-8, always covering the box) that is folded into `transform()` and `clip()`, and
   applied as a CSS transform to the `content` element (the video). Drawings and picture

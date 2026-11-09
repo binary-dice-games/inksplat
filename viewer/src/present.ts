@@ -314,7 +314,9 @@ function enterApp(): void {
     toolHints: prefs.toolHints,
     // Support: the pointer (cursor, laser, emotes) on canvas 1 only. The person's app draws the
     // marks on their screen and they come back in the video, so they are not drawn here too.
-    ...(support ? { tools: ['pointer'], pages: false, turns: false, localMarks: false } : {}),
+    ...(support
+      ? { tools: ['pointer'], pages: false, turns: false, localMarks: false, embeds: false }
+      : {}),
   });
   board.on('error', (e) => toast(e.message));
   board.on('page', render);
