@@ -91,7 +91,9 @@ describe('refreshStill', () => {
       const source = canvas.captureStream(0).getVideoTracks()[0] as MediaStreamTrack & {
         requestFrame(): void;
       };
-      const out = refreshStill(source, { everyMs: 100, forMs: 600 });
+      // forMs well above the frame pipeline's latency on a busy machine, or every repeat may be
+      // through before the first frame is seen here.
+      const out = refreshStill(source, { everyMs: 100, forMs: 1500 });
       if (!out) return null;
       const Processor = (
         window as unknown as {
@@ -124,9 +126,9 @@ describe('refreshStill', () => {
       }
       // Then still: the output repeats it for forMs, then stops.
       const first = frames;
-      await wait(1500); // well past forMs
+      await wait(3000); // well past forMs
       const count = frames - first;
-      await wait(500);
+      await wait(1000);
       const later = frames - first;
       source.stop();
       const end = performance.now() + 5000;
@@ -135,9 +137,10 @@ describe('refreshStill', () => {
     });
     expect(result, 'MediaStreamTrackProcessor/Generator in Chrome').not.toBeNull();
     const r = result!;
-    // After the last frame: repeats every everyMs for forMs (6 at most; slow timers make fewer)
+    // After the last frame: repeats every everyMs for forMs (15 at most; slow timers make fewer,
+    // and frames asked for before the first one was seen may still come)
     expect(r.count).toBeGreaterThanOrEqual(2);
-    expect(r.count).toBeLessThanOrEqual(7);
+    expect(r.count).toBeLessThanOrEqual(18);
     expect(r.later).toBe(r.count);
     expect(r.ended).toBe(true);
   }, 30000);

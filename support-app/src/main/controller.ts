@@ -601,6 +601,9 @@ export class Controller {
       this.session.webContents.postMessage(IPC.port, null, [port1]);
       win.webContents.postMessage(IPC.port, null, [port2]);
       win.showInactive();
+      // Windows fits a new window into the work area, leaving the taskbar uncovered: the whole
+      // display once more, now that the window is up.
+      win.setBounds((this.display ?? display).bounds);
     });
     void win.loadURL(`${ORIGIN}/overlay.html`);
   }
