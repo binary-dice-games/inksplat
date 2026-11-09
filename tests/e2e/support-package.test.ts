@@ -55,7 +55,8 @@ beforeAll(async () => {
   await buildSupportApp(join(project, 'dist'));
   const out = join(work, 'release');
   const cli = require.resolve('electron-builder/cli.js');
-  const electronDist = dirname(require('electron') as unknown as string);
+  // electron-builder downloads its own Electron, as the release does (the copy in node_modules
+  // may still be downloading for another test), for this machine's architecture only.
   const r = spawnSync(
     process.execPath,
     [
@@ -65,10 +66,10 @@ beforeAll(async () => {
       '--config',
       'electron-builder.json',
       '--dir',
+      process.arch === 'arm64' ? '--arm64' : '--x64',
       '--publish',
       'never',
       `-c.directories.output=${out}`,
-      `-c.electronDist=${electronDist}`,
     ],
     {
       encoding: 'utf8',
