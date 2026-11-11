@@ -274,7 +274,10 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   administrative: **Clear all** and a new session wipe locked items too. Another person's picture or
   file is moved by a plain drag like any element; Shift+drag copies it out: the box over each
   picture (pointer-events off) takes the pointer only while Shift is held (`.drag.shift`). A picture is resized
-  from a corner grip, as notes are, because Shift is taken. A note has `fs` (font size, 9, 12 default, 18); the bar offers the three sizes of the text tool.
+  from a corner grip, as notes are, because Shift is taken. A note's grip sits on the bottom right corner of its box, outside round shapes so it takes
+  no room in them, with a hit area of its own inside the note's node: a press on it is a press on the
+  note, which stays selected. It shows only while the note is selected alone (class `single`, not on
+  the members of a selection), and only then does a press there resize. A note has `fs` (font size, 9, 12 default, 18); the bar offers the three sizes of the text tool.
 - **Saving.** `toSvg(box, {background, backdrop})` draws the frame (`exportArea`: the adapter's
   aspect, else the bounds of the items) with the same node builders as the screen, minus what only
   helps to use the board (hit areas, resize grips, selection); the sheet behind a board without

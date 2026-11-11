@@ -42,6 +42,8 @@
  * under its see-through screen, as Excalidraw does with embeddables; a click lets the frame take the
  * pointer until a press outside it or Esc (`embeds: false` leaves the frames out). Other link cards
  * show their site's icon from `LINK_ICON_ORIGIN` (`linkIcons: false` keeps the drawn globe).
+ * The grip that resizes a note sits on the bottom right corner of its box, with a hit area of its
+ * own, and shows only while the note is selected alone.
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -1282,23 +1284,32 @@ function pinHead(shape, x, y, r, attrs) {
   return svgEl('circle', { cx: x, cy: y, r, ...attrs });
 }
 
-/** How far along the diagonal to the corner a shape reaches, by shape (so a grip can sit inside it). */
-const GRIP_REACH = { square: 1, rounded: 0.92, oval: 0.7071, diamond: 0.5, hexagon: 0.735 };
+/** How far from the centre of the grip a press still takes it (board units). */
+const GRIP_HIT = 12;
 
-/** The grip that resizes a note or picture, from its centre in its own frame: inside the shape, near its bottom right. */
+/**
+ * The grip that resizes a note or picture, from its centre in its own frame: a note's sits on the
+ * bottom right corner of its box (outside a round shape, so it takes no room in it, and shown only
+ * while the note is selected alone); a picture's inside it, near that corner. `inset` is how far
+ * in from the corner it is.
+ */
 function gripOf(item) {
-  const s = GRIP_REACH[item.shape ?? 'square'] ?? 1;
-  return { x: (s * item.size) / 2 - 9, y: (s * item.size * item.ratio) / 2 - 9, s };
+  const inset = item.kind === 'note' ? 0 : 9;
+  return { x: item.size / 2 - inset, y: (item.size * item.ratio) / 2 - inset, inset };
 }
 
-/** The little handle drawn at the grip, with a pale disc so it shows on any paper. */
+/**
+ * The little handle drawn at the grip, with a pale disc so it shows on any paper, and a hit area of
+ * its own: a press on it, even outside the shape, is a press on the item (it is not deselected).
+ */
 function gripNode(item) {
   const g = gripOf(item);
   const x = item.x + g.x;
   const y = item.y + g.y;
   const node = svgEl('g', { class: 'grip' });
   node.append(
-    svgEl('circle', { cx: x, cy: y, r: 8, fill: 'rgba(255,255,255,0.45)' }),
+    svgEl('circle', { class: 'hit box', cx: x, cy: y, r: GRIP_HIT, fill: 'transparent' }),
+    svgEl('circle', { cx: x, cy: y, r: 8, fill: item.kind === 'note' ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.45)', stroke: item.kind === 'note' ? 'rgba(0,0,0,0.35)' : 'none', 'stroke-width': 0.75 }),
     svgEl('path', { d: `M${x - 5} ${y + 5}L${x + 5} ${y - 5}M${x} ${y + 5}L${x + 5} ${y}`, stroke: 'rgba(0,0,0,0.55)', 'stroke-width': 1.4, fill: 'none', 'stroke-linecap': 'round' }),
   );
   return node;
@@ -1764,6 +1775,8 @@ svg.board .note-item { cursor: default; }
 svg.board .arrow-item, svg.board .pin-item { cursor: pointer; }
 svg.board .pin-item.own .pin-label { cursor: move; }
 svg.board.arrow, svg.board.pin { cursor: crosshair; }
+.note-item:not(.single) .grip { display: none; }
+svg.board .note-item .grip { cursor: nwse-resize; }
 .item.selected .paper { stroke: var(--wb-accent); stroke-width: 2.5; }
 .item.selected .cut-edge, .item.drop-target .cut-edge { flood-color: var(--wb-accent); flood-opacity: 1; }
 .ink-item.selected, .text-item.selected, .sticker-item.selected { filter: drop-shadow(0 0 2px var(--wb-accent)) drop-shadow(0 0 2px var(--wb-accent)); }
@@ -3321,7 +3334,7 @@ export class Whiteboard {
       this.group = new Set(left.length > 1 ? left : []);
       if (left.length === 1) {
         this.selected = left[0];
-        this.nodes.get(left[0])?.node.classList.add('selected');
+        this.nodes.get(left[0])?.node.classList.add('selected', 'single');
       }
     }
     this.dropLooseThreads(all);
@@ -3664,7 +3677,7 @@ export class Whiteboard {
   /** @private One item's SVG. Text goes in as textContent only. */
   itemNode(item, resolve = (id) => this.model.get(id)) {
     const own = item.author === this.model.peerId ? ' own' : '';
-    const g = svgEl('g', { class: `item ${item.kind}-item${own}${item.id === this.selected || this.group.has(item.id) ? ' selected' : ''}${this.editing?.item?.id === item.id && this.editing.note ? ' editing' : ''}`, 'data-id': item.id });
+    const g = svgEl('g', { class: `item ${item.kind}-item${own}${item.id === this.selected ? ' selected single' : this.group.has(item.id) ? ' selected' : ''}${this.editing?.item?.id === item.id && this.editing.note ? ' editing' : ''}`, 'data-id': item.id });
     const turn = item.rot ? { transform: `rotate(${item.rot} ${item.x} ${item.y + pinOffset(item)})` } : {};
     if (item.kind === 'ink') {
       const d = inkPath(item.points);
@@ -5103,6 +5116,7 @@ export class Whiteboard {
       return;
     }
     const hit = this.pinAt(this.eventPoint(ev)) ?? this.itemAt(ev); // a pin wins over what lies on it
+    const alone = hit && this.selected === hit.id; // selected alone before this press: a note shows its grip
     if (hit && this.group.has(hit.id) && this.tool === 'pointer') {
       this.beginGroupDrag(ev, this.eventPoint(ev));
       this.groupDrag.pressed = hit.id;
@@ -5137,7 +5151,7 @@ export class Whiteboard {
       // A pin on an item is moved from where it is drawn, not from where it was first put.
       const grabbed = mine.kind === 'pin' && mine.on ? { ...mine, ...pinPoint(mine, this.lookup) } : mine;
       const byPin = ELEMENTS.has(mine.kind) && this.pinAt(p)?.id === mine.id;
-      this.dragging = { item: grabbed, from: p, moved: false, fields: null, preview: false, dx: 0, dy: 0, corner: (mine.kind === 'note' || mine.kind === 'image') && this.onCorner(mine, p), byPin };
+      this.dragging = { item: grabbed, from: p, moved: false, fields: null, preview: false, dx: 0, dy: 0, corner: ((mine.kind === 'note' && alone) || mine.kind === 'image') && this.onCorner(mine, p), byPin };
       if (byPin) {
         // The pin is what is being dragged: it gets the outline, not the element.
         this.nodes.get(mine.id)?.node.classList.add('by-pin');
@@ -5295,6 +5309,7 @@ export class Whiteboard {
     // Only the mark changes: the nodes stay, or the click that follows the press would be lost.
     for (const key of [before, id]) {
       this.nodes.get(key)?.node.classList.toggle('selected', key === id);
+      this.nodes.get(key)?.node.classList.toggle('single', key === id); // selected alone: a note shows its grip
     }
     this.renderSelbar();
   }
@@ -5310,6 +5325,7 @@ export class Whiteboard {
   markGroup(on) {
     for (const id of this.group) {
       this.nodes.get(id)?.node.classList.toggle('selected', on);
+      this.nodes.get(id)?.node.classList.remove('single');
     }
   }
 
@@ -5665,7 +5681,7 @@ export class Whiteboard {
   onCorner(item, p) {
     const l = this.inNote(item, p);
     const g = gripOf(item);
-    return Math.hypot(l.x - g.x, l.y - g.y) <= 14;
+    return Math.hypot(l.x - g.x, l.y - g.y) <= GRIP_HIT + 2;
   }
 
   /**
@@ -5689,11 +5705,11 @@ export class Whiteboard {
       // The top left corner stays where it is; the pointer pulls the bottom right one.
       const a = ((it.rot ?? 0) * Math.PI) / 180;
       const l = this.inNote(it, p);
-      // The grip follows the pointer: its place on the new size is (s + 1) / 2 of it, less 9, from the top left.
+      // The grip follows the pointer: it is `inset` in from the bottom right corner of the new size.
       const picture = it.kind === 'image'; // a picture keeps its proportions
-      const k = 2 / (1 + gripOf(it).s);
-      const wide = (l.x + it.size / 2 + 9) * k;
-      const high = (l.y + (it.size * it.ratio) / 2 + 9) * k;
+      const { inset } = gripOf(it);
+      const wide = l.x + it.size / 2 + inset;
+      const high = l.y + (it.size * it.ratio) / 2 + inset;
       const w = picture ? Math.min(2000, Math.max(8, wide, high / it.ratio)) : Math.min(600, Math.max(60, wide));
       const h = picture ? w * it.ratio : Math.min(600, Math.max(0.3 * w, high));
       const cx = w / 2 - it.size / 2;

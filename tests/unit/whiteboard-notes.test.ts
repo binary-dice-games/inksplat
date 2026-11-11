@@ -262,14 +262,15 @@ describe('sticky notes on the board', () => {
       expect(t.wb.items()[0]).toMatchObject({ x: 130, y: 140, size: 180 });
       expect(t.root.querySelector('textarea')).toBeNull(); // a drag does not start editing
 
-      // The bottom right corner is at (220, 230); the pointer takes it to (255, 245).
-      pointer(t.board, 'pointerdown', 215, 225);
+      // Selected by the drag, it shows its grip on its bottom right corner, at (220, 230); the
+      // pointer takes it to (255, 245).
+      pointer(t.board, 'pointerdown', 218, 228);
       pointer(t.board, 'pointermove', 255, 245);
       pointer(t.board, 'pointerup', 255, 245);
       const n = t.wb.items()[0] as NoteItem;
-      expect(n).toMatchObject({ size: 224, ratio: 0.911 }); // the grip follows the pointer
-      expect(n.x - 224 / 2).toBeCloseTo(40, 0); // the top left corner stays at (40, 50)
-      expect(n.y - 204 / 2).toBeCloseTo(50, 0);
+      expect(n).toMatchObject({ size: 215, ratio: 0.907 }); // the grip follows the pointer
+      expect(n.x - 215 / 2).toBeCloseTo(40, 0); // the top left corner stays at (40, 50)
+      expect(n.y - 195 / 2).toBeCloseTo(50, 0);
       expect(t.root.querySelector('textarea')).toBeNull();
     } finally {
       t.wb.destroy();
@@ -405,12 +406,12 @@ describe('the text box of a note being written', () => {
       expect(root.querySelector('textarea.sticky')).toBe(ta); // the same box, kept: what was typed stays
 
       // Resized from the corner (at 350, 330): the box has the new size.
-      pointer(board, 'pointerdown', 345, 325);
+      pointer(board, 'pointerdown', 348, 328);
       pointer(board, 'pointermove', 395, 365);
-      expect(at()).toMatchObject({ left: 170, top: 150, width: 234, height: 224 });
+      expect(at()).toMatchObject({ left: 170, top: 150, width: 225, height: 215 });
       pointer(board, 'pointerup', 395, 365);
-      expect(at()).toMatchObject({ width: 234, height: 224 });
-      expect(wb.items()[0]).toMatchObject({ size: 234 });
+      expect(at()).toMatchObject({ width: 225, height: 215 });
+      expect(wb.items()[0]).toMatchObject({ size: 225 });
     } finally {
       wb.destroy();
       room.close();

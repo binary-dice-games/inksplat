@@ -56,7 +56,7 @@ presenter on Chrome.
 | 43 | Pin a file and a picture on the board | each sits a few degrees tilted (at most 7), a different angle each time |
 | 44 | Copy a web address and press Ctrl+V on the board, or drag one from another tab | a card with the site name and path appears; on a viewer, clicking it opens the page in a new tab; hovering shows the full address |
 | 45 | Choose the wall and cork backgrounds | plaster with soft shading and a rough surface; cork with grain and a wooden frame |
-| 46 | Press 6 and click the board; type; click away. Drag the note, drag its corner, select it and press Delete | the note keeps the text, moves, resizes from its bottom right corner and disappears |
+| 46 | Press 6 and click the board; type; click away. Drag the note, drag the grip on its corner, select it and press Delete | the note keeps the text, moves, resizes from its bottom right corner and disappears |
 | 47 | On another device, double click the note, then paste in a text editor | the text of the note is pasted; the other device cannot edit, move or delete the note |
 | 48 | Press 6 repeatedly and add notes; select one and use the bar over it | the shapes cycle (square, rounded, oval, diamond, hexagon); the bar changes the shape and the colour of the selected note; the text stays centred and inside |
 | 49 | Press 7 and click; press 8, press on a pin and drag to another | a pin appears; a hanging thread with a shadow ties the two pins and follows them when they are dragged |
@@ -72,7 +72,7 @@ presenter on Chrome.
 | 59 | Choose small, medium and large text in a note's bar | the text size changes for everybody, the text re-wraps, and the box being written in follows |
 | 60 | Select a note, a pin and a thread in turn and press Delete | each goes (a pin takes its threads with it); on a locked element nothing goes and the message shows |
 | 61 | Select a pin attached to a note, then move the note | the bar sits over the pin where it is drawn and follows it |
-| 62 | Make an oval, a diamond and a hexagon note; pull the grip near the bottom right inside each | each grows, stays selected, the grip is on the shape |
+| 62 | Make an oval, a diamond and a hexagon note; select each and pull the grip on the bottom right corner of its box | the grip shows only on the selected note; each grows and stays selected |
 | 63 | Drag a note by its pin onto a bigger note, then move, resize and turn the bigger one; drag the small one by its pin off | the small one is on top and goes, scales and turns with the big one; off it stays where dropped; while dragging by the pin a ring is on the pin and the element it would attach to has a dashed outline |
 | 64 | With two people, put a note on canvas 1, go to canvas 3 with the round buttons at the top and draw; the other stays on 1 | Your canvas 3 has only your drawing; the button of 3 shows 1 person and the other's 1 person; you do not see their cursor until you both are on the same canvas; Clear on 3 leaves canvas 1; saving a board file and opening it restores every canvas |
 | 65 | Click the pin tool, choose a star, put a pin down; press 7 again and put another; select the first and change its shape and colour from the bar | The panel lists five shapes; each pin is drawn in its shape, threads still tie to its centre |

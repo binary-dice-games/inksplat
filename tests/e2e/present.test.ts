@@ -819,7 +819,7 @@ describe('static presenter page', () => {
     expect(plain).not.toBe('proxy');
   });
 
-  it('resizes an oval note from a grip inside it, and attaches an element dragged by its pin to another', async () => {
+  it('resizes an oval note from the grip on its corner, and attaches an element dragged by its pin to another', async () => {
     const presenter = await presenterPage();
     await site.startBoard(presenter);
     const box = (await presenter.locator('#stage').boundingBox())!;
@@ -844,17 +844,18 @@ describe('static presenter page', () => {
     await presenter.mouse.click(first.x, first.y);
     await presenter.keyboard.press('Control+Enter');
     const before = await rect('.note-item:nth-child(1) ellipse.paper');
-    // Its grip is inside the ellipse, and pulling it makes the note bigger.
-    const grip = await rect('.note-item .grip circle');
-    expect(grip.x + grip.w / 2).toBeLessThan(before.x + before.w); // not at the corner of the box
-    expect(grip.y + grip.h / 2).toBeLessThan(before.y + before.h);
+    // Its grip is on the corner of its box, outside the ellipse, and pulling it makes the note
+    // bigger.
+    const grip = await rect('.note-item .grip circle:not(.hit)');
+    expect(grip.x + grip.w / 2).toBeGreaterThan(before.x + before.w * 0.9); // at the corner of the box
+    expect(grip.y + grip.h / 2).toBeGreaterThan(before.y + before.h * 0.9);
     await presenter.mouse.move(grip.x + grip.w / 2, grip.y + grip.h / 2);
     await presenter.mouse.down();
     await presenter.mouse.move(grip.x + grip.w / 2 + 60, grip.y + grip.h / 2 + 40, { steps: 5 });
     await presenter.mouse.up();
     const after = await rect('.note-item:nth-child(1) ellipse.paper');
     expect(after.w).toBeGreaterThan(before.w + 40);
-    // The note is still selected (the click did not fall outside the shape).
+    // The note is still selected (the grip has its own hit area, outside the shape).
     expect(await presenter.locator('collab-whiteboard .selbar').isVisible()).toBe(true);
 
     // A second, small note; dragged by its pin onto the first, it is attached and goes with it.
