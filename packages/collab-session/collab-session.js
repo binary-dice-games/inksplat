@@ -15,7 +15,8 @@
  * the host's own stream is encoded once for all viewers (`SharedEncoder`, `encoderInfo`).
  * For support sessions (spec/08_remote_support/DESIGN.md sections 4.3 and 5.4): the
  * `certificates` option (one DTLS certificate for every link), `fingerprints(peerId)`, and
- * `degradationPreference` in the host's `up` message.
+ * `degradationPreference` in the host's `up` message. The downlink's limits are applied again
+ * once answered (Safari refuses them before).
  * It imports nothing.
  *
  *   import { createSession } from './collab-session.js';
@@ -1084,13 +1085,19 @@ class MediaController {
   }
 
   /**
-   * Host: after setLocalDescription(answer). With forwarding, the downlink sends in its chosen
-   * codec (`encodings[0].codec`, among those negotiated); where that cannot be set, the codec it
-   * really sends (the first negotiated) is what the router goes by. (inksplat addition)
+   * Host: after setLocalDescription(answer). The downlink's limits are applied again: Safari
+   * refuses them before the answer, and would send at its default rate. With forwarding, the
+   * downlink sends in its chosen codec (`encodings[0].codec`, among those negotiated); where that
+   * cannot be set, the codec it really sends (the first negotiated) is what the router goes by.
+   * (inksplat addition)
    */
   async answered(pc) {
     const rec = this.links.get(pc);
-    if (!this.encoded || !rec) {
+    if (!rec) {
+      return;
+    }
+    await this.apply(rec.sender);
+    if (!this.encoded) {
       return;
     }
     const sender = rec.sender;
@@ -1371,7 +1378,11 @@ class MediaController {
     }
   }
 
-  /** @private */
+  /**
+   * @private Sets the limits on `sender`. Resolves when applied or refused (the refusal is
+   * logged): before the answer Safari's sender has no encodings to set, so `answered` applies
+   * them again.
+   */
   apply(sender) {
     const { fps, maxBitrate, scale } = this.params;
     const p = sender.getParameters();
@@ -1383,7 +1394,7 @@ class MediaController {
     if (maxBitrate) enc.maxBitrate = maxBitrate;
     if (scale) enc.scaleResolutionDownBy = Math.max(1, scale);
     p.degradationPreference = 'maintain-resolution';
-    sender.setParameters(p).catch(() => {});
+    return sender.setParameters(p).catch((e) => dbg('video limits not set:', e?.message ?? e));
   }
 
   // ── Guest uplink ──────────────────────────────────────────────────────
@@ -1447,7 +1458,7 @@ class MediaController {
     if (maxBitrate) enc.maxBitrate = maxBitrate;
     if (scale) enc.scaleResolutionDownBy = scale;
     p.degradationPreference = degradationPreference ?? 'maintain-resolution';
-    sender.setParameters(p).catch(() => {});
+    sender.setParameters(p).catch((e) => dbg('uplink limits not set:', e?.message ?? e));
   }
 
   /**

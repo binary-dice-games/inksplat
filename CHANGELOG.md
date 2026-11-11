@@ -25,6 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- When the presenter page runs in Safari, the video settings (frames per second, bitrate, size) now apply; Safari used to send at its own default rate of about 30 frames per second.
 - inksplat Support on Windows: the overlay covers the whole screen, the taskbar too, so the helper's pointer, pings and laser show where the helper put them.
 - With the note tool, a click or drag on another note (or picture or link) puts a new note there, attached to it, instead of selecting or moving the one underneath.
 - Join and settings dialogs: the picture row no longer overflows the dialog, and the picture field says "Choose picture" instead of "No file selected" when one is already saved.
