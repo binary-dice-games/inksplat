@@ -35,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A note's resize grip sits on the bottom right corner of the note, outside round shapes, and shows only on the note selected alone; pressing it never deselects the note.
 - The presenter's own screen is encoded once for all viewers instead of once per viewer, in a codec the computer encodes in hardware where it has one: much less CPU with many viewers.
 - The eraser draws a dashed trail along its way while it is held, like a selection drag with the pointer.
 - The presenter controls are redesigned: grouped sections (Invite, People, Screen, Board), switches for the options, initials for the people, a button to hide the panel, and Settings and End session always in view. Long names are cut with an ellipsis (the full text shows on hover) instead of making the panel scroll sideways.

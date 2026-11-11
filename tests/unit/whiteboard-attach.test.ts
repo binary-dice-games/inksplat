@@ -92,7 +92,7 @@ function setup(t: Mounted) {
 }
 
 describe('the grip that resizes a shape', () => {
-  it('is inside every shape, where it can be hit, and not at the corner of its box', async () => {
+  it('sits on the bottom right corner of the box, outside round shapes, and resizes from there', async () => {
     for (const shape of NOTE_SHAPES) {
       const t = await mount();
       try {
@@ -108,37 +108,49 @@ describe('the grip that resizes a shape', () => {
             size: 180,
           }),
         );
-        const grip = t.root.querySelector('.note-item .grip circle')!;
-        const gx = Number(grip.getAttribute('cx')) - 300;
-        const gy = Number(grip.getAttribute('cy')) - 300;
-        // Inside the outline, as each shape draws it (half the box is 90).
-        const inside = {
-          square: Math.max(Math.abs(gx), Math.abs(gy)) <= 90,
-          rounded: Math.max(Math.abs(gx), Math.abs(gy)) <= 81,
-          oval: (gx / 90) ** 2 + (gy / 90) ** 2 <= 1,
-          diamond: Math.abs(gx) / 90 + Math.abs(gy) / 90 <= 1,
-          hexagon: Math.abs(gy) <= 90 && Math.abs(gx) <= 90 - 32.4 * (Math.abs(gy) / 90),
-        }[shape];
-        expect(inside, `${shape} at ${gx}, ${gy}`).toBe(true);
-        // Pressing on it resizes: the width grows with the pointer.
-        t.drag(id, [300 + gx, 300 + gy], [300 + gx + 40, 300 + gy + 40]);
-        expect((t.get(id) as NoteItem).size).toBeGreaterThan(190);
+        t.wb.selectItems([id]);
+        const note = t.get(id);
+        const corner = { x: 300 + 90, y: 300 + (180 * note.ratio) / 2 };
+        const grip = t.root.querySelector('.note-item .grip circle:not(.hit)')!;
+        expect(Number(grip.getAttribute('cx')), shape).toBe(corner.x);
+        expect(Number(grip.getAttribute('cy')), shape).toBe(corner.y);
+        // It has its own hit area, so a press on it is a press on the note.
+        expect(t.root.querySelector('.note-item .grip .hit.box'), shape).not.toBeNull();
+        t.drag(id, [corner.x, corner.y], [corner.x + 40, corner.y + 40]);
+        expect(t.get(id).size, shape).toBe(220);
         expect(t.get(id).x - t.get(id).size / 2).toBeCloseTo(210, 0); // resized: the top left stays
-        // Pressing at the corner of the box, outside the shape's grip, moves the note instead.
-        const now = t.get(id);
-        t.drag(
-          id,
-          [now.x + now.size / 2 - 3, now.y + (now.size * now.ratio) / 2 - 3],
-          [now.x + now.size / 2 + 27, now.y + (now.size * now.ratio) / 2 + 27],
-        );
-        if (shape === 'square') {
-          expect(t.get(id).size, shape).toBeGreaterThan(now.size); // the grip is close enough
-        } else {
-          expect(t.get(id).size, shape).toBe(now.size); // not a resize
-        }
+        expect(t.wb.selection(), shape).toEqual([id]); // still selected
       } finally {
         t.close();
       }
+    }
+  });
+
+  it('shows only on the note selected alone, and resizes only from there', async () => {
+    const t = await mount();
+    try {
+      const a = t.wb.addNote({ x: 200, y: 200 }, 'A')!;
+      const b = t.wb.addNote({ x: 500, y: 400 }, 'B')!;
+      const node = (id: string) => t.root.querySelector(`.note-item[data-id="${id}"]`)!;
+      t.wb.selectItems([a]);
+      expect(node(a).classList.contains('single')).toBe(true);
+      expect(node(b).classList.contains('single')).toBe(false); // its grip is hidden
+      // Several selected: no grip on any of them.
+      t.wb.selectItems([a, b]);
+      expect(node(a).classList.contains('single')).toBe(false);
+      expect(node(b).classList.contains('single')).toBe(false);
+      // Nothing selected: a press at the corner of a note moves it (and selects it), not resizes it.
+      t.wb.selectItems([]);
+      const before = t.get(b);
+      const corner = [
+        before.x + before.size / 2 - 2,
+        before.y + (before.size * before.ratio) / 2 - 2,
+      ] as [number, number];
+      t.drag(b, corner, [corner[0] + 30, corner[1] + 30]);
+      expect(t.get(b)).toMatchObject({ size: before.size, x: before.x + 30, y: before.y + 30 });
+      expect(node(b).classList.contains('single')).toBe(true); // the grip shows now
+    } finally {
+      t.close();
     }
   });
 });
