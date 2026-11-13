@@ -18,6 +18,7 @@ inksplat_add_test(whiteboard_pointer_modes tests/unit/whiteboard-pointer-modes.t
 inksplat_add_test(whiteboard_selection tests/unit/whiteboard-selection.test.ts)
 inksplat_add_test(whiteboard_text_bar tests/unit/whiteboard-text-bar.test.ts)
 inksplat_add_test(whiteboard_tool_hints tests/unit/whiteboard-tool-hints.test.ts)
+inksplat_add_test(whiteboard_tool_settings tests/unit/whiteboard-tool-settings.test.ts)
 inksplat_add_test(whiteboard_live_drag tests/unit/whiteboard-live-drag.test.ts)
 inksplat_add_test(sheet tests/unit/sheet.test.ts)
 inksplat_add_test(zoom_layer tests/unit/zoom-layer.test.ts)

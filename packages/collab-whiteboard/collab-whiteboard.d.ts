@@ -134,6 +134,14 @@ export interface PinItem extends ItemBase {
 /** Which ends of a thread have a head: none, `start` (its source), `end` (its destination) or both. */
 export type ArrowHeads = 'none' | 'start' | 'end' | 'both';
 export const ARROW_HEADS: readonly ArrowHeads[];
+/** The kinds of head an end of a thread can have; `triangle` is the usual one. */
+export type HeadType = 'triangle' | 'arrow' | 'dot' | 'bar' | 'diamond';
+export const HEAD_TYPES: readonly HeadType[];
+/** The widths of a thread: thin, normal (the usual one) and thick. */
+export const THREAD_WIDTHS: readonly number[];
+/** The strokes of a thread; `solid` is the usual one. */
+export type ThreadDash = 'solid' | 'dotted' | 'dashed';
+export const THREAD_DASHES: readonly ThreadDash[];
 /** The modes of the pointer tool: the plain cursor, a laser that leaves a short trail, emotes, a magnifier. */
 export type PointerMode = 'cursor' | 'laser' | 'emote' | 'magnify';
 export const POINTER_MODES: readonly PointerMode[];
@@ -149,7 +157,27 @@ export interface ArrowItem extends ItemBase {
   to: string;
   color: string;
   heads: ArrowHeads;
+  /** The kind of the head at the source, when it has one; absent for `triangle`. */
+  startHead?: HeadType;
+  /** The kind of the head at the destination, when it has one; absent for `triangle`. */
+  endHead?: HeadType;
+  /** One of {@link THREAD_WIDTHS}; absent for the normal one. */
+  width?: number;
+  /** `dotted` or `dashed`; absent for a solid thread. */
+  dash?: 'dotted' | 'dashed';
 }
+
+/** The head at each end of a thread (or of the style of new ones): `none` or its kind. */
+export function threadEnds(item: { heads: ArrowHeads; startHead?: string; endHead?: string }): {
+  start: HeadType | 'none';
+  end: HeadType | 'none';
+};
+
+/** The fields of a thread with these heads at its ends. */
+export function headsOf(
+  start: HeadType | 'none',
+  end: HeadType | 'none',
+): { heads: ArrowHeads; startHead: HeadType | undefined; endHead: HeadType | undefined };
 
 /** Where a thread ties to an item (its pin), in board units; null when it has no pin. */
 export function pinPoint(
@@ -499,6 +527,16 @@ export class Whiteboard {
     /** The mode of the pointer tool (key 1 again goes through them). */
     pointerMode?: PointerMode;
     heads?: ArrowHeads;
+    /** The font of new texts. */
+    font?: 'sans' | 'serif' | 'mono' | 'hand';
+    /** The head at the source of new threads: `none` takes it away, a kind gives it that head. */
+    startHead?: HeadType | 'none';
+    /** The head at the destination of new threads. */
+    endHead?: HeadType | 'none';
+    /** The width of new threads, one of {@link THREAD_WIDTHS}. */
+    threadWidth?: number;
+    /** The stroke of new threads. */
+    dash?: ThreadDash;
   }): void;
   setAdapter(adapter: Adapter): void;
   /**

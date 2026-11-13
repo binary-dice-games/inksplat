@@ -233,12 +233,15 @@ Same tools, data model, merge rules and limits as nymph. Changes:
   text may use (`SHAPE_INSET`); the text is centred. A `pin` item `{x, y, color, shape?}` is a bare pin (`shape` one of `PIN_SHAPES`, absent for round; only its head is drawn differently). An
   `arrow` item `{from, to, color, heads}` ties the pin of the item `from` to that of `to` (any item
   with a pin: picture, link, note or pin item; `pinPoint`); `heads` is `none`, `start`, `end` or
-  `both`. Nothing about its shape is stored: every client draws the same quadratic curve that hangs
+  `both`. Optional looks: `startHead`/`endHead` (one of `HEAD_TYPES`, kept only for an end that
+  has a head, absent for `triangle`), `width` (one of `THREAD_WIDTHS`, absent for the normal one)
+  and `dash` (`dotted`, `dashed`; absent for solid). They are optional so that an older client
+  still reads the thread (with triangle heads, normal and solid). Nothing about its shape is stored: every client draws the same quadratic curve that hangs
   below the straight line, sagging more the longer it is (`threadCurve`), with a shadow like the
   other pinned things. It is re-drawn when either pin changes (the node's signature includes the
   stamps of both) and follows a pin while it is dragged. An author whose thread lost a pin takes it
   down (`dropLooseThreads`, not an undo step). Selecting (a click on your own note, pin or thread)
-  shows a bar over it to change shape, colour or heads; only the owner sees it. Tool keys: 6 note,
+  shows a bar over it to change shape, colour, heads, width and stroke; only the owner sees it. Tool keys: 6 note,
   7 pin, 8 thread, 9 colour.
 - **Pins on things.** A `pin` item may carry `on` (the id of a note, picture, link or sticker) and
   `u`, `v`: where it is on that item as fractions of its width and height from its centre, in

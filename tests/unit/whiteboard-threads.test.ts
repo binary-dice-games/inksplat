@@ -444,7 +444,7 @@ describe('selecting a note or a thread', () => {
     }
   });
 
-  it('shows the heads and colours of a thread, and applies them', async () => {
+  it('shows the width, stroke, heads and colours of a thread, and applies them', async () => {
     const t = await mount();
     try {
       const a = t.wb.addPin({ x: 100, y: 100 })!;
@@ -455,15 +455,37 @@ describe('selecting a note or a thread', () => {
       pointer(t.board, 'pointerdown', 200, 130);
       pointer(t.board, 'pointerup', 200, 130);
       expect(t.root.querySelector('.arrow-item.selected')).not.toBeNull();
-      const head = (name: string) =>
-        buttons(t.root).find((x) => x.getAttribute('aria-label') === name)!;
-      head('Heads at both ends').click();
+      const press = (name: string) =>
+        buttons(t.root)
+          .find((x) => x.getAttribute('aria-label') === name)!
+          .click();
+      // Each end has a button that opens a menu of the kinds of head.
+      const pick = (end: string, type: string) => {
+        t.root
+          .querySelector<HTMLButtonElement>(`.selbar button.head[aria-label^="${end}"]`)!
+          .click();
+        const menu = [...t.root.querySelectorAll<HTMLButtonElement>('.selmenu button')];
+        expect(menu.map((b) => b.getAttribute('aria-label'))).toEqual(
+          ['None', 'Triangle', 'Arrow', 'Dot', 'Bar', 'Diamond'].map((n) => `${end} head: ${n}`),
+        );
+        menu.find((b) => b.getAttribute('aria-label') === `${end} head: ${type}`)!.click();
+      };
+      pick('Start', 'Triangle');
       expect(t.wb.items()[2]).toMatchObject({ kind: 'arrow', heads: 'both' });
       expect(t.root.querySelectorAll('.arrow-item g:not(.shadow) > polygon')).toHaveLength(2);
-      head('No heads').click();
+      pick('Start', 'None');
+      pick('End', 'None');
+      expect(t.wb.items()[2]).toMatchObject({ heads: 'none' });
       expect(t.root.querySelectorAll('.arrow-item g:not(.shadow) > polygon')).toHaveLength(0);
-      head('Head at the source').click();
-      expect(t.root.querySelectorAll('.arrow-item g:not(.shadow) > polygon')).toHaveLength(1);
+      pick('Start', 'Dot');
+      expect(t.wb.items()[2]).toMatchObject({ heads: 'start', startHead: 'dot' });
+      expect(t.root.querySelectorAll('.arrow-item g:not(.shadow) > circle')).toHaveLength(1);
+      press('Line width: Thick');
+      press('Line style: Dashed');
+      expect(t.wb.items()[2]).toMatchObject({ width: 4.6, dash: 'dashed', startHead: 'dot' });
+      const paper = t.root.querySelector('.arrow-item .paper')!;
+      expect(paper.getAttribute('stroke-width')).toBe('4.6');
+      expect(paper.getAttribute('stroke-dasharray')).not.toBeNull();
     } finally {
       t.wb.destroy();
       t.room.close();
@@ -1010,10 +1032,8 @@ describe('the options of a tool', () => {
       // key: tool, how many options, the option to choose, what it changes
       const cases: [string, number, number, () => unknown, unknown][] = [
         ['2', 3, 2, () => (t.inside.style as unknown as { width: number }).width, 8],
-        ['3', 3, 0, () => (t.inside.style as unknown as { size: number }).size, 14],
         ['6', 5, 3, () => t.inside.style.shape, 'diamond'],
         ['7', 5, 4, () => (t.inside.style as unknown as { pinShape: string }).pinShape, 'star'],
-        ['8', 4, 1, () => t.inside.style.heads, 'start'],
       ];
       for (const [key, count, choose, read, expected] of cases) {
         t.tool(key).click();
@@ -1060,7 +1080,6 @@ describe('the options of a tool', () => {
         return [n, cols];
       };
       expect(columns('2')).toEqual([3, 'repeat(3, 34px)']); // line widths
-      expect(columns('8')).toEqual([4, 'repeat(4, 34px)']); // thread heads
       expect(columns('6')).toEqual([5, 'repeat(5, 34px)']); // note shapes
       expect(columns('9')).toEqual([8, 'repeat(4, 34px)']); // colours: two rows
     } finally {
