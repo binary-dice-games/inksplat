@@ -43,7 +43,11 @@
  * pointer until a press outside it or Esc (`embeds: false` leaves the frames out). Other link cards
  * show their site's icon from `LINK_ICON_ORIGIN` (`linkIcons: false` keeps the drawn globe).
  * The grip that resizes a note sits on the bottom right corner of its box, with a hit area of its
- * own, and shows only while the note is selected alone.
+ * own, and shows only while the note is selected alone. Threads have a width, a stroke (solid,
+ * dotted, dashed) and a kind of head at each end (`HEAD_TYPES`, as Excalidraw has), set for new
+ * threads in the thread tool's panel; the text tool's panel sets the size and font of new texts
+ * (panels of several groups stay open). The board's cursor is a crosshair with a picture of the
+ * tool in hand beside it (`cursorFor`).
  *
  *   import { createWhiteboard } from './collab-whiteboard.js';
  *   const wb = createWhiteboard(container, { session, adapter });
@@ -85,6 +89,15 @@ export const NOTE_SHAPES = Object.freeze(['square', 'rounded', 'oval', 'diamond'
 /** The shapes of a pin's head (`round` is the usual one and is not stored). */
 export const PIN_SHAPES = Object.freeze(['round', 'square', 'diamond', 'triangle', 'star']);
 export const ARROW_HEADS = Object.freeze(['none', 'start', 'end', 'both']);
+/**
+ * The kinds of head an end of a thread can have, as Excalidraw offers: a filled `triangle` (the
+ * usual one, not stored), an open `arrow`, a `dot`, a `bar` across the end and a `diamond`.
+ */
+export const HEAD_TYPES = Object.freeze(['triangle', 'arrow', 'dot', 'bar', 'diamond']);
+/** The widths of a thread: thin, normal (not stored) and thick. */
+export const THREAD_WIDTHS = Object.freeze([1.4, 2.6, 4.6]);
+/** The strokes of a thread: `solid` (the usual one, not stored), `dotted` and `dashed`. */
+export const THREAD_DASHES = Object.freeze(['solid', 'dotted', 'dashed']);
 /**
  * The modes of the pointer tool: the plain cursor, a laser that leaves a short trail, emotes that
  * float away, and a magnifier (the cursor with a lens beside it, seen only here).
@@ -218,7 +231,21 @@ export function cleanItem(item) {
     if (!ID.test(item.from ?? '') || !ID.test(item.to ?? '') || item.from === item.to || !COLOR.test(item.color ?? '') || !ARROW_HEADS.includes(item.heads)) {
       return null;
     }
-    return { ...base, from: item.from, to: item.to, color: item.color, heads: item.heads };
+    // The kind of each head is kept only for an end that has one; the usual looks are not stored.
+    const start = item.heads === 'start' || item.heads === 'both';
+    const end = item.heads === 'end' || item.heads === 'both';
+    const kindOf = (type) => HEAD_TYPES.includes(type) && type !== HEAD_TYPES[0];
+    return {
+      ...base,
+      from: item.from,
+      to: item.to,
+      color: item.color,
+      heads: item.heads,
+      ...(start && kindOf(item.startHead) ? { startHead: item.startHead } : {}),
+      ...(end && kindOf(item.endHead) ? { endHead: item.endHead } : {}),
+      ...(THREAD_WIDTHS.includes(item.width) && item.width !== THREAD_WIDTHS[1] ? { width: item.width } : {}),
+      ...(THREAD_DASHES.includes(item.dash) && item.dash !== THREAD_DASHES[0] ? { dash: item.dash } : {}),
+    };
   }
   if (item.kind === 'link') {
     const url = cleanUrl(item.url);
@@ -1475,6 +1502,102 @@ export function splitHeads(heads) {
   return { first: heads === 'start' || heads === 'both' ? 'start' : 'none', second: heads === 'end' || heads === 'both' ? 'end' : 'none' };
 }
 
+/**
+ * The head at each end of a thread: `none` or one of {@link HEAD_TYPES}.
+ * @param {{heads: string, startHead?: string, endHead?: string}} item a thread, or the style of new ones
+ * @returns {{start: string, end: string}}
+ */
+export function threadEnds(item) {
+  const start = item.heads === 'start' || item.heads === 'both';
+  const end = item.heads === 'end' || item.heads === 'both';
+  return { start: start ? (HEAD_TYPES.includes(item.startHead) ? item.startHead : HEAD_TYPES[0]) : 'none', end: end ? (HEAD_TYPES.includes(item.endHead) ? item.endHead : HEAD_TYPES[0]) : 'none' };
+}
+
+/**
+ * The fields of a thread with these heads at its ends (`none` or one of {@link HEAD_TYPES}):
+ * `heads` and the kind of each head, which `cleanItem` drops when it is the usual one.
+ * @returns {{heads: string, startHead: string | undefined, endHead: string | undefined}}
+ */
+export function headsOf(start, end) {
+  const s = HEAD_TYPES.includes(start);
+  const e = HEAD_TYPES.includes(end);
+  return { heads: s && e ? 'both' : s ? 'start' : e ? 'end' : 'none', startHead: s ? start : undefined, endHead: e ? end : undefined };
+}
+
+/** The SVG dash pattern of a thread's stroke `dash` at `width`, or null for a solid one. */
+function dashArray(dash, width) {
+  if (dash === 'dotted') {
+    return `0 ${round1(width * 2.4)}`; // round caps draw the dots
+  }
+  return dash === 'dashed' ? `${round1(width * 3.2)} ${round1(width * 2.6)}` : null;
+}
+
+/**
+ * The SVG of a thread's head of kind `type` with its point at `tip`, pointing away from `from`.
+ * `k` scales it; `color` fills or strokes it; `width` is the stroke of the open kinds.
+ * @returns {{tag: string, attrs: object}[]}
+ */
+function headShapes(type, tip, from, k, color, width, edge = 'rgba(0,0,0,0.35)') {
+  const len = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
+  const ux = (tip.x - from.x) / len;
+  const uy = (tip.y - from.y) / len;
+  const at = (back, side) => ({ x: tip.x - ux * back * k - uy * side * k, y: tip.y - uy * back * k + ux * side * k });
+  const pts = (list) => list.map((q) => `${round1(q.x)},${round1(q.y)}`).join(' ');
+  const filled = { fill: color, stroke: edge, 'stroke-width': 0.6, 'stroke-linejoin': 'round' };
+  const open = { fill: 'none', stroke: color, 'stroke-width': Math.max(1.4, width), 'stroke-linecap': 'round', 'stroke-linejoin': 'round' };
+  if (type === 'arrow') {
+    return [{ tag: 'polyline', attrs: { points: pts([at(12, 6.5), tip, at(12, -6.5)]), ...open } }];
+  }
+  if (type === 'dot') {
+    const c = at(4.6, 0);
+    return [{ tag: 'circle', attrs: { cx: round1(c.x), cy: round1(c.y), r: round1(4.6 * k), ...filled } }];
+  }
+  if (type === 'bar') {
+    return [{ tag: 'polyline', attrs: { points: pts([at(0, 7), at(0, -7)]), ...open } }];
+  }
+  if (type === 'diamond') {
+    return [{ tag: 'polygon', attrs: { points: pts([tip, at(7.5, 5), at(15, 0), at(7.5, -5)]), ...filled } }];
+  }
+  return [{ tag: 'polygon', attrs: { points: pts([tip, at(13, 5.5), at(13, -5.5)]), ...filled } }];
+}
+
+/**
+ * The inner SVG of a small (24-unit) picture of a thread with these ends, width and stroke: the
+ * thread tool's icon and the buttons that choose its options.
+ */
+function threadIcon(ends, width = THREAD_WIDTHS[1], dash = 'solid') {
+  // `ends` null: the bare line, without the pins at its ends.
+  const A = { x: 4, y: 17 };
+  const C = { x: 12, y: 17 };
+  const B = { x: 20, y: 7 };
+  const w = { [THREAD_WIDTHS[0]]: 1.2, [THREAD_WIDTHS[2]]: 3.6 }[width] ?? 2.2;
+  const dashes = dashArray(dash, w);
+  const end = (type, tip, from) => {
+    if (type === 'none') {
+      return `<circle cx="${tip.x}" cy="${tip.y}" r="2" fill="currentColor"/>`;
+    }
+    return headShapes(type, tip, from, 0.5, 'currentColor', w, 'currentColor')
+      .map(({ tag, attrs }) => `<${tag} ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`)
+      .join('');
+  };
+  const line = `<path d="M${A.x} ${A.y}Q${C.x} ${C.y} ${B.x} ${B.y}" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round"${dashes ? ` stroke-dasharray="${dashes}"` : ''}/>`;
+  return ends ? `${line}${end(ends.start, A, C)}${end(ends.end, B, C)}` : line;
+}
+
+/** The icon of the end of a thread with a head of kind `type` (or `none`), pointing right. */
+function headIcon(type) {
+  const line = '<path d="M3 12h15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>';
+  if (type === 'none') {
+    return line;
+  }
+  return (
+    line +
+    headShapes(type, { x: 20, y: 12 }, { x: 3, y: 12 }, 0.75, 'currentColor', 2, 'currentColor')
+      .map(({ tag, attrs }) => `<${tag} ${Object.entries(attrs).map(([k, v]) => `${k}="${v}"`).join(' ')}/>`)
+      .join('')
+  );
+}
+
 const BOARD_FORMAT = 'inksplat-board';
 
 const NOTE_FONT = 'system-ui, -apple-system, "Segoe UI", sans-serif';
@@ -1589,6 +1712,11 @@ const STRINGS = {
   note: 'Sticky note (press again for another shape)',
   pin: 'Pin',
   arrow: 'Thread between pins (press again for other heads)',
+  dashLabel: 'Line style',
+  dashNames: { solid: 'Solid', dotted: 'Dotted', dashed: 'Dashed' },
+  startHeadLabel: 'Start head',
+  endHeadLabel: 'End head',
+  headTypeNames: { none: 'None', triangle: 'Triangle', arrow: 'Arrow', dot: 'Dot', bar: 'Bar', diamond: 'Diamond' },
   shapeNames: { square: 'Square', rounded: 'Rounded', oval: 'Oval', diamond: 'Diamond', hexagon: 'Hexagon' },
   headNames: { none: 'No heads', start: 'Head at the source', end: 'Head at the destination', both: 'Heads at both ends' },
   shapeLabel: 'Shape',
@@ -1728,6 +1856,10 @@ svg.board.laser, svg.board.laser .item { cursor: crosshair; } svg.board.emote, s
 .pop button { all: unset; width: 34px; height: 34px; border-radius: 7px; display: grid; place-items: center; cursor: pointer; }
 .pop button:hover, .pop button[aria-pressed="true"] { background: var(--wb-hover); }
 .pop .swatch { width: 20px; height: 20px; border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(128,128,128,.55); }
+.pop.groups { display: flex; flex-direction: column; gap: 4px; padding: 6px; }
+.pop .group .name { padding: 0 4px 2px; font-size: 11px; color: var(--wb-fg); opacity: .7; }
+.pop .group .row { display: grid; gap: 2px; }
+.pop svg { color: var(--wb-fg); }
 .drag { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .embeds { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .embeds .embed { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #000; pointer-events: none; }
@@ -1791,6 +1923,8 @@ svg.board .note-item .grip { cursor: nwse-resize; }
 .selbar[hidden], .selbar.moving { display: none; }
 .selbar button { width: 28px; height: 28px; padding: 3px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--wb-fg); cursor: pointer; }
 .selbar button[aria-pressed="true"] { border-color: var(--wb-accent); background: var(--wb-hover, rgba(0,0,0,.08)); }
+.selmenu { position: absolute; top: calc(100% + 4px); display: flex; gap: 2px; padding: 4px; border-radius: 8px;
+  background: var(--wb-bg); border: 1px solid var(--wb-border); box-shadow: 0 2px 10px rgba(0,0,0,.2); }
 .selbar hr { width: 1px; height: 20px; margin: 0 2px; border: 0; background: var(--wb-border); }
 .selbar .count { padding: 0 6px; color: var(--wb-fg); font-size: 12px; white-space: nowrap; }
 .selbar .swatch { display: block; width: 18px; height: 18px; margin: auto; border-radius: 50%; border: 1px solid rgba(0,0,0,.3); }
@@ -1914,7 +2048,22 @@ export class Whiteboard {
     this.listeners = new Map();
     this.tool = 'pointer';
     const own = this.session.me.color;
-    this.style = { color: COLOR.test(own ?? '') ? own : PALETTE[0], width: WIDTHS[1], size: SIZES[1], sticker: 'check', shape: 'square', pinShape: 'round', heads: 'end', pointerMode: 'cursor' };
+    this.style = {
+      color: COLOR.test(own ?? '') ? own : PALETTE[0],
+      width: WIDTHS[1],
+      size: SIZES[1],
+      font: 'sans',
+      sticker: 'check',
+      shape: 'square',
+      pinShape: 'round',
+      heads: 'end',
+      // The kind of head at each end of a new thread (when `heads` gives it one), its width and stroke.
+      startHead: HEAD_TYPES[0],
+      endHead: HEAD_TYPES[0],
+      threadWidth: THREAD_WIDTHS[1],
+      dash: 'solid',
+      pointerMode: 'cursor',
+    };
     this.readOnlyFlag = !!options.readOnly;
     this.localMarks = options.localMarks !== false; // inksplat: draw this person's laser, pings and emotes here
     this.nodes = new Map(); // item id -> SVG node
@@ -2211,7 +2360,8 @@ export class Whiteboard {
     if (this.readOnlyFlag || from === to || !pinPoint(this.model.get(from), this.lookup) || !pinPoint(this.model.get(to), this.lookup)) {
       return null;
     }
-    const op = this.local(() => this.model.add({ kind: 'arrow', from, to, color: this.style.color, heads: this.style.heads }));
+    const st = this.style;
+    const op = this.local(() => this.model.add({ kind: 'arrow', from, to, color: st.color, heads: st.heads, startHead: st.startHead, endHead: st.endHead, width: st.threadWidth, dash: st.dash }));
     return op ? op.item.id : null;
   }
 
@@ -2277,7 +2427,13 @@ export class Whiteboard {
     this.adapter.resetView?.();
   }
 
-  /** The style of new items: {color, width, size, sticker, shape, pinShape, heads}. */
+  /**
+   * The style of new items: {color, width (of the pen), size and font (of text), sticker, shape,
+   * pinShape, pointerMode, and of threads heads, startHead and endHead (`none` or one of
+   * {@link HEAD_TYPES}: a type gives that end a head of that kind, `none` takes it away),
+   * threadWidth (one of {@link THREAD_WIDTHS}) and dash (one of {@link THREAD_DASHES})}.
+   * Unknown values are ignored.
+   */
   setStyle(style) {
     if (style.color && COLOR.test(style.color)) {
       this.style.color = style.color;
@@ -2298,6 +2454,27 @@ export class Whiteboard {
     }
     if (ARROW_HEADS.includes(style.heads)) {
       this.style.heads = style.heads;
+    }
+    if (TEXT_FONTS.includes(style.font)) {
+      this.style.font = style.font;
+    }
+    if (THREAD_WIDTHS.includes(style.threadWidth)) {
+      this.style.threadWidth = style.threadWidth;
+    }
+    if (THREAD_DASHES.includes(style.dash)) {
+      this.style.dash = style.dash;
+    }
+    for (const end of ['startHead', 'endHead']) {
+      const type = style[end];
+      if (type !== 'none' && !HEAD_TYPES.includes(type)) {
+        continue;
+      }
+      const ends = threadEnds(this.style);
+      ends[end === 'startHead' ? 'start' : 'end'] = type;
+      this.style.heads = headsOf(ends.start, ends.end).heads;
+      if (type !== 'none') {
+        this.style[end] = type; // `none` keeps the kind, for when the end gets a head again
+      }
     }
     if (POINTER_MODES.includes(style.pointerMode) && style.pointerMode !== this.style.pointerMode) {
       this.style.pointerMode = style.pointerMode;
@@ -3049,9 +3226,45 @@ export class Whiteboard {
     return this.toolHints;
   }
 
+  /**
+   * @private The CSS cursor of the board for `tool` with the style in hand: a small crosshair
+   * where the press lands, with a picture of the tool (in the colour in hand) beside it, so it is
+   * plain what a click does. Empty for the plain pointer and the magnifier (the page's own cursor).
+   */
+  cursorFor(tool, mode = this.style.pointerMode) {
+    const name = tool === 'pointer' ? mode : tool;
+    if (name === 'cursor' || name === 'magnify' || !(name in ICONS || name in MODE_ICONS)) {
+      return '';
+    }
+    const c = this.style.color;
+    const light = [1, 3, 5].reduce((n, i) => n + parseInt(c.slice(i, i + 2), 16), 0) > 3 * 215;
+    const ink = light ? '#1c2024' : c;
+    let icon = tool === 'pointer' ? MODE_ICONS[name] : this.toolIcon(tool);
+    if (tool === 'sticker') {
+      icon = `<svg viewBox="0 0 24 24" x="1" y="1" width="22" height="22">${this.stickers.get(this.style.sticker) ?? PLACEHOLDER}</svg>`;
+    }
+    const cross = 'M7 1v4M7 9v4M1 7h4M9 7h4';
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">' +
+      `<path d="${cross}" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/><path d="${cross}" stroke="#1c2024" stroke-width="1.4" stroke-linecap="round"/>` +
+      '<rect x="12.5" y="12.5" width="19" height="19" rx="5" fill="#ffffff" stroke="#8b8d98"/>' +
+      `<g transform="translate(14 14) scale(0.6667)" color="${ink}">${icon.replaceAll('currentColor', ink)}</g></svg>`;
+    return `url("data:image/svg+xml,${encodeURIComponent(svg)}") 7 7, crosshair`;
+  }
+
+  /** @private Puts the cursor of the tool in hand on the board (only when it changed). */
+  syncCursor() {
+    const cursor = this.board ? this.cursorFor(this.tool) : '';
+    if (this.board && cursor !== this.cursorValue) {
+      this.cursorValue = cursor;
+      this.board.style.cursor = cursor;
+    }
+  }
+
   /** @private */
   renderToolbar() {
     this.renderToolHint();
+    this.syncCursor();
     if (!this.toolbarBox || this.toolbarBox.hidden) {
       return;
     }
@@ -3104,7 +3317,7 @@ export class Whiteboard {
     }
     if (t === 'text') {
       const size = [12, 16, 21][nearest(SIZES, this.style.size)];
-      return `<text x="12" y="${12 + size * 0.35}" font-size="${size}" font-weight="700" text-anchor="middle" fill="currentColor" font-family="system-ui, sans-serif">A</text>`;
+      return `<text x="12" y="${12 + size * 0.35}" font-size="${size}" font-weight="700" text-anchor="middle" fill="currentColor" font-family='${FONT_STACKS[this.style.font].replace(/"/g, '')}'>A</text>`;
     }
     if (t === 'note') {
       const el = shapeElement(this.style.shape, 4, 4, 16, 16, { fill: pastel(this.style.color), stroke: 'currentColor', 'stroke-width': 1.8 });
@@ -3114,22 +3327,8 @@ export class Whiteboard {
       return `${pinHead(this.style.pinShape, 12, 9, 5, { fill: 'currentColor' }).outerHTML}<path d="M12 15v7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>`;
     }
     if (t === 'arrow') {
-      // The thread of the icon, and a filled head at an end, turned along the curve there.
-      const h = this.style.heads;
-      const A = { x: 4, y: 17 };
-      const C = { x: 12, y: 17 };
-      const B = { x: 20, y: 7 };
-      const dot = (p) => `<circle cx="${p.x}" cy="${p.y}" r="2" fill="currentColor"/>`;
-      const head = (tip, from) => {
-        const len = Math.hypot(tip.x - from.x, tip.y - from.y);
-        const ux = (tip.x - from.x) / len;
-        const uy = (tip.y - from.y) / len;
-        const bx = tip.x - ux * 6;
-        const by = tip.y - uy * 6;
-        const pts = [tip, { x: bx - uy * 3, y: by + ux * 3 }, { x: bx + uy * 3, y: by - ux * 3 }];
-        return `<polygon points="${pts.map((p) => `${round1(p.x)},${round1(p.y)}`).join(' ')}" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linejoin="round"/>`;
-      };
-      return `<path d="M${A.x} ${A.y}Q${C.x} ${C.y} ${B.x} ${B.y}" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>${h === 'start' || h === 'both' ? head(A, C) : dot(A)}${h === 'end' || h === 'both' ? head(B, C) : dot(B)}`;
+      // The thread of the icon with the heads, width and stroke in hand.
+      return threadIcon(threadEnds(this.style), this.style.threadWidth, this.style.dash);
     }
     if (t === 'sticker') {
       return `<use href="#sticker-${this.style.sticker}" x="1" y="1" width="22" height="22"/>`;
@@ -3155,7 +3354,7 @@ export class Whiteboard {
       return WIDTHS.map((w, i) => ({ label: `${s.pen}: ${WIDTH_NAMES[i]}`, icon: `<path d="M4 12h16" stroke="currentColor" stroke-width="${[1.5, 3, 5.5][i]}" stroke-linecap="round"/>`, pressed: nearest(WIDTHS, style.width) === i, run: () => this.setStyle({ width: w }) }));
     }
     if (kind === 'text') {
-      return SIZES.map((size, i) => ({ label: `${s.text}: ${SIZE_NAMES[i]}`, icon: `<text x="12" y="${12 + [12, 16, 21][i] * 0.35}" font-size="${[12, 16, 21][i]}" font-weight="700" text-anchor="middle" fill="currentColor" font-family="system-ui, sans-serif">A</text>`, pressed: nearest(SIZES, style.size) === i, run: () => this.setStyle({ size }) }));
+      return this.groupsOf(kind).flatMap((g) => g.options);
     }
     if (kind === 'sticker') {
       return [...this.stickers.keys()].map((name) => ({ label: name, icon: `<use href="#sticker-${name}"/>`, pressed: name === style.sticker, run: () => this.setStyle({ sticker: name }) }));
@@ -3167,38 +3366,97 @@ export class Whiteboard {
       return PIN_SHAPES.map((shape) => ({ label: `${s.shapeLabel}: ${s.pinShapeNames[shape]}`, icon: pinHead(shape, 12, 12, 7, { fill: style.color, stroke: 'currentColor', 'stroke-width': 1.6 }).outerHTML, pressed: style.pinShape === shape, run: () => this.setStyle({ pinShape: shape }) }));
     }
     if (kind === 'arrow') {
-      return ARROW_HEADS.map((heads) => {
-        const saved = style.heads;
-        style.heads = heads;
-        const icon = this.toolIcon('arrow');
-        style.heads = saved;
-        return { label: s.headNames[heads], icon, pressed: saved === heads, run: () => this.setStyle({ heads }) };
-      });
+      return this.groupsOf(kind).flatMap((g) => g.options);
     }
     return [];
   }
 
-  /** @private The panel with the options of a tool (or the colours) beside the toolbar; again closes it. */
+  /**
+   * @private The options of a tool in named groups, for a panel that sets several things at once:
+   * text (its size and font) and threads (width, stroke and the head at each end). Other tools have
+   * one group without a name: {@link optionsOf}.
+   * @returns {{label: string | null, options: object[]}[]}
+   */
+  groupsOf(kind) {
+    const s = this.strings;
+    const style = this.style;
+    if (kind === 'text') {
+      const glyph = (px, font = 'sans') => `<text x="12" y="${12 + px * 0.35}" font-size="${px}" font-weight="700" text-anchor="middle" fill="currentColor" font-family='${FONT_STACKS[font].replace(/"/g, '')}'>A</text>`;
+      return [
+        { label: s.sizeLabel, options: SIZES.map((size, i) => ({ label: `${s.sizeLabel}: ${s.sizeNames[SIZE_NAMES[i]]}`, icon: glyph([12, 16, 21][i]), pressed: nearest(SIZES, style.size) === i, run: () => this.setStyle({ size }) })) },
+        { label: s.fontLabel, options: TEXT_FONTS.map((font) => ({ label: `${s.fontLabel}: ${s.fontNames[font]}`, icon: `<text x="12" y="17" font-size="15" text-anchor="middle" fill="currentColor" font-family='${FONT_STACKS[font].replace(/"/g, '')}'>Aa</text>`, pressed: style.font === font, run: () => this.setStyle({ font }) })) },
+      ];
+    }
+    if (kind === 'arrow') {
+      const ends = threadEnds(style);
+      const headGroup = (end, label) => ({
+        label,
+        options: ['none', ...HEAD_TYPES].map((type) => ({ label: `${label}: ${s.headTypeNames[type]}`, icon: `<g${end === 'start' ? ' transform="matrix(-1 0 0 1 24 0)"' : ''}>${headIcon(type)}</g>`, pressed: ends[end] === type, run: () => this.setStyle({ [`${end}Head`]: type }) })),
+      });
+      return [
+        { label: s.widthLabel, options: THREAD_WIDTHS.map((w, i) => ({ label: `${s.widthLabel}: ${s.widthNames[WIDTH_NAMES[i]]}`, icon: threadIcon(null, w), pressed: style.threadWidth === w, run: () => this.setStyle({ threadWidth: w }) })) },
+        { label: s.dashLabel, options: THREAD_DASHES.map((dash) => ({ label: `${s.dashLabel}: ${s.dashNames[dash]}`, icon: threadIcon(null, style.threadWidth, dash), pressed: style.dash === dash, run: () => this.setStyle({ dash }) })) },
+        headGroup('start', s.startHeadLabel),
+        headGroup('end', s.endHeadLabel),
+      ];
+    }
+    return [{ label: null, options: this.optionsOf(kind) }];
+  }
+
+  /**
+   * @private The panel with the options of a tool (or the colours) beside the toolbar; again closes
+   * it. A panel of one group closes when an option is chosen; one of several groups (text, threads)
+   * stays open so that each can be set, and shows the choices as they are made.
+   */
   togglePopover(kind) {
     if (!this.popover.hidden && this.popover.dataset.kind === kind) {
       this.popover.hidden = true;
       return;
     }
+    this.fillPopover(kind);
+    const at = kind === 'color' ? this.toolbarBox.querySelector('[aria-label="' + this.strings.color + '"]') : this.toolbarBox.children[this.tools.indexOf(kind)];
+    this.popover.style.top = `${this.toolbarBox.offsetTop + (at?.offsetTop ?? 0)}px`;
+    this.popover.hidden = false;
+  }
+
+  /** @private Fills the panel with the options of `kind`: a grid of them, or a row for each group. */
+  fillPopover(kind) {
     this.popover.dataset.kind = kind;
-    const items = this.optionsOf(kind).map((o) => {
+    const groups = this.groupsOf(kind);
+    const many = groups.length > 1;
+    const buttonOf = (o) => {
       const inner = o.swatch ? `<span class="swatch" style="background:${o.swatch}"></span>` : `<svg viewBox="0 0 24 24" width="24" height="24">${o.icon}</svg>`;
       const b = htmlEl('button', { type: 'button', 'aria-label': o.label, title: o.label, 'aria-pressed': String(o.pressed) }, inner);
       b.addEventListener('click', () => {
         o.run();
-        this.popover.hidden = true;
+        if (many) {
+          this.fillPopover(kind); // the new choice shows; the panel stays
+        } else {
+          this.popover.hidden = true;
+        }
       });
       return b;
-    });
-    this.popover.replaceChildren(...items);
-    this.popover.style.gridTemplateColumns = `repeat(${items.length <= 5 ? items.length : 4}, 34px)`;
-    const at = kind === 'color' ? this.toolbarBox.querySelector('[aria-label="' + this.strings.color + '"]') : this.toolbarBox.children[this.tools.indexOf(kind)];
-    this.popover.style.top = `${this.toolbarBox.offsetTop + (at?.offsetTop ?? 0)}px`;
-    this.popover.hidden = false;
+    };
+    this.popover.classList.toggle('groups', many);
+    if (!many) {
+      const items = groups[0].options.map(buttonOf);
+      this.popover.replaceChildren(...items);
+      this.popover.style.gridTemplateColumns = `repeat(${items.length <= 5 ? items.length : 4}, 34px)`;
+      return;
+    }
+    this.popover.style.gridTemplateColumns = '';
+    this.popover.replaceChildren(
+      ...groups.map((g) => {
+        const box = htmlEl('div', { class: 'group', role: 'group', 'aria-label': g.label });
+        const row = htmlEl('div', { class: 'row' });
+        row.style.gridTemplateColumns = `repeat(${g.options.length}, 34px)`;
+        row.append(...g.options.map(buttonOf));
+        const name = htmlEl('div', { class: 'name' });
+        name.textContent = g.label;
+        box.append(name, row);
+        return box;
+      }),
+    );
   }
 
   /** @private The adapter's transform on the drawing layer, and the cursors. */
@@ -3554,26 +3812,26 @@ export class Whiteboard {
       return;
     }
     const { c, d } = threadCurve(a, b, threadSeed(item.id));
-    const heads = [];
-    const head = (tip, from) => {
+    const width = item.width ?? THREAD_WIDTHS[1];
+    const dashes = dashArray(item.dash, width);
+    const k = 0.8 + (0.2 * width) / THREAD_WIDTHS[1]; // a thicker thread has larger heads
+    const ends = threadEnds(item);
+    // A head stops short of the pin, so that the pin shows.
+    const away = (tip, from) => {
       const len = Math.hypot(tip.x - from.x, tip.y - from.y) || 1;
-      const ux = (tip.x - from.x) / len;
-      const uy = (tip.y - from.y) / len;
-      const bx = tip.x - ux * PIN_RADIUS * 1.25;
-      const by = tip.y - uy * PIN_RADIUS * 1.25;
-      const tx = bx - ux * 13;
-      const ty = by - uy * 13;
-      heads.push(svgEl('polygon', { points: `${round1(bx)},${round1(by)} ${round1(tx - uy * 5.5)},${round1(ty + ux * 5.5)} ${round1(tx + uy * 5.5)},${round1(ty - ux * 5.5)}`, fill: item.color, stroke: 'rgba(0,0,0,0.35)', 'stroke-width': 0.6, 'stroke-linejoin': 'round' }));
+      return { x: tip.x - ((tip.x - from.x) / len) * PIN_RADIUS * 1.25, y: tip.y - ((tip.y - from.y) / len) * PIN_RADIUS * 1.25 };
     };
-    if (item.heads === 'end' || item.heads === 'both') {
-      head(b, c);
-    }
-    if (item.heads === 'start' || item.heads === 'both') {
-      head(a, c);
-    }
+    const shapes = [
+      ...(ends.end !== 'none' ? headShapes(ends.end, away(b, c), c, k, item.color, width) : []),
+      ...(ends.start !== 'none' ? headShapes(ends.start, away(a, c), c, k, item.color, width) : []),
+    ];
+    const heads = shapes.map(({ tag, attrs }) => svgEl(tag, attrs));
+    const line = { d, fill: 'none', 'stroke-width': width, 'stroke-linecap': 'round', ...(dashes ? { 'stroke-dasharray': dashes } : {}) };
     const thread = svgEl('g');
-    thread.append(svgEl('path', { class: 'paper', d, fill: 'none', stroke: item.color, 'stroke-width': 2.6, 'stroke-linecap': 'round' }), ...heads);
-    const shade = shadowOf(svgEl('path', { d, fill: 'none', stroke: SHADOW_FILL, 'stroke-width': 2.6, 'stroke-linecap': 'round' }), ...heads.map((h) => svgEl('polygon', { points: h.getAttribute('points'), fill: SHADOW_FILL })));
+    thread.append(svgEl('path', { class: 'paper', ...line, stroke: item.color }), ...heads);
+    // The shadow of a head is the same shape, filled (or stroked, for the open kinds) in see-through black.
+    const shadeOf = ({ tag, attrs }) => svgEl(tag, { ...attrs, ...(attrs.fill === 'none' ? { stroke: SHADOW_FILL } : { fill: SHADOW_FILL, stroke: 'none' }) });
+    const shade = shadowOf(svgEl('path', { ...line, stroke: SHADOW_FILL }), ...shapes.map(shadeOf));
     g.append(svgEl('path', { class: 'hit', d, fill: 'none', stroke: 'transparent', 'stroke-width': 14, 'stroke-linecap': 'round' }), shade, thread);
     if (item.lock) {
       g.append(lockBadge((a.x + 2 * c.x + b.x) / 4, (a.y + 2 * c.y + b.y) / 4 - 4, item.lock));
@@ -5358,7 +5616,7 @@ export class Whiteboard {
   /**
    * @private The bar over the selected element: for a line its widths and colours; for a text its
    * sizes, fonts and colours; for a note its shapes, text sizes and paper colours;
-   * for a thread its heads and colours; for a pin its colours; for anybody the copy of a note's text,
+   * for a thread its width, stroke, the head at each end (a menu each) and colours; for a pin its colours; for anybody the copy of a note's text,
    * and for its owner the lock. Only what the person may change is offered.
    */
   renderSelbar() {
@@ -5414,12 +5672,41 @@ export class Whiteboard {
         rule();
         swatches(PALETTE.map(pastel), item.color, 'color');
       } else if (editable && item.kind === 'arrow') {
-        for (const heads of ARROW_HEADS) {
-          const saved = this.style.heads;
-          this.style.heads = heads;
-          const icon = this.toolIcon('arrow');
-          this.style.heads = saved;
-          parts.push(button(s.headNames[heads], `<svg viewBox="0 0 24 24">${icon}</svg>`, item.heads === heads, () => change({ heads })));
+        const width = item.width ?? THREAD_WIDTHS[1];
+        const dash = item.dash ?? 'solid';
+        for (const [i, w] of THREAD_WIDTHS.entries()) {
+          parts.push(button(`${s.widthLabel}: ${s.widthNames[WIDTH_NAMES[i]]}`, `<svg viewBox="0 0 24 24">${threadIcon(null, w)}</svg>`, width === w, () => change({ width: w })));
+        }
+        rule();
+        for (const d of THREAD_DASHES) {
+          parts.push(button(`${s.dashLabel}: ${s.dashNames[d]}`, `<svg viewBox="0 0 24 24">${threadIcon(null, width, d)}</svg>`, dash === d, () => change({ dash: d })));
+        }
+        rule();
+        // Each end has a button that shows its head and opens a menu of the kinds of head.
+        const ends = threadEnds(item);
+        for (const [end, label] of [['start', s.startHeadLabel], ['end', s.endHeadLabel]]) {
+          const flip = (icon) => (end === 'start' ? `<g transform="matrix(-1 0 0 1 24 0)">${icon}</g>` : icon);
+          const opener = button(`${label}: ${s.headTypeNames[ends[end]]}`, `<svg viewBox="0 0 24 24">${flip(headIcon(ends[end]))}</svg>`, false, () => {
+            const open = this.selbar.querySelector(`.selmenu[data-end="${end}"]`);
+            this.selbar.querySelector('.selmenu')?.remove();
+            if (open) {
+              return;
+            }
+            const menu = htmlEl('div', { class: 'selmenu', role: 'group', 'aria-label': label, 'data-end': end });
+            for (const type of ['none', ...HEAD_TYPES]) {
+              menu.append(
+                button(`${label}: ${s.headTypeNames[type]}`, `<svg viewBox="0 0 24 24">${flip(headIcon(type))}</svg>`, ends[end] === type, () => {
+                  const next = { ...ends, [end]: type };
+                  change(headsOf(next.start, next.end));
+                }),
+              );
+            }
+            menu.style.left = `${opener.offsetLeft}px`;
+            this.selbar.append(menu);
+          });
+          opener.setAttribute('aria-haspopup', 'true');
+          opener.classList.add('head');
+          parts.push(opener);
         }
         rule();
         swatches(PALETTE, item.color, 'color');
@@ -5995,7 +6282,8 @@ export class Whiteboard {
   beginThread(source, ev, restore, origin = null) {
     this.popover.hidden = true;
     this.board.setPointerCapture?.(ev.pointerId);
-    const node = svgEl('path', { fill: 'none', stroke: this.style.color, 'stroke-width': 2.6, 'stroke-linecap': 'round', opacity: 0.8 });
+    const dashes = dashArray(this.style.dash, this.style.threadWidth);
+    const node = svgEl('path', { fill: 'none', stroke: this.style.color, 'stroke-width': this.style.threadWidth, 'stroke-linecap': 'round', opacity: 0.8, ...(dashes ? { 'stroke-dasharray': dashes } : {}) });
     const ring = svgEl('circle', { r: PIN_RADIUS + 4, fill: 'none', stroke: 'var(--wb-accent, #3e63dd)', 'stroke-width': 2, 'pointer-events': 'none' });
     this.threading = { from: source, origin, node, ring, restore, x0: ev.clientX, y0: ev.clientY };
     this.selbar.classList.add('moving');
@@ -6096,7 +6384,9 @@ export class Whiteboard {
     }
     const heads = splitHeads(thread.heads);
     this.local(() => this.model.change(id, { to: pin, heads: heads.first }));
-    this.local(() => this.model.add({ kind: 'arrow', from: pin, to: thread.to, color: thread.color, heads: heads.second, ...(thread.lock ? { lock: thread.lock } : {}) }));
+    // The new part keeps the looks of the thread: its width, stroke and the kind of its end's head.
+    const looks = { endHead: thread.endHead, width: thread.width, dash: thread.dash };
+    this.local(() => this.model.add({ kind: 'arrow', from: pin, to: thread.to, color: thread.color, heads: heads.second, ...looks, ...(thread.lock ? { lock: thread.lock } : {}) }));
     return pin;
   }
 
@@ -6535,11 +6825,14 @@ export class Whiteboard {
     this.finishText();
     const ta = htmlEl('textarea', { class: 'note', maxlength: String(LIMITS.text), rows: '1', 'aria-label': this.strings.typeHere, placeholder: this.strings.typeHere });
     ta.value = item?.text ?? '';
-    this.editing = { item, x: item?.x ?? at.x, y: item?.y ?? at.y, size: item?.size ?? this.style.size, color: item?.color ?? this.style.color, node: ta };
+    this.editing = { item, x: item?.x ?? at.x, y: item?.y ?? at.y, size: item?.size ?? this.style.size, font: item ? (item.font ?? 'sans') : this.style.font, color: item?.color ?? this.style.color, node: ta };
     if (item) {
       this.nodes.get(item.id)?.node.setAttribute('opacity', '0');
     }
     ta.style.color = this.editing.color;
+    if (this.editing.font !== 'sans') {
+      ta.style.fontFamily = FONT_STACKS[this.editing.font];
+    }
     ta.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Escape') {
@@ -6686,7 +6979,7 @@ export class Whiteboard {
     } else if (e.item && text !== e.item.text) {
       this.local(() => this.model.change(e.item.id, { text }));
     } else if (!e.item && text) {
-      this.local(() => this.model.add({ kind: 'text', x: round1(e.x), y: round1(e.y), size: e.size, text, color: e.color }));
+      this.local(() => this.model.add({ kind: 'text', x: round1(e.x), y: round1(e.y), size: e.size, text, color: e.color, ...(e.font !== 'sans' ? { font: e.font } : {}) }));
     }
   }
 
