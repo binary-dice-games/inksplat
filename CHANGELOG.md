@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Viewers can connect through TURN servers: the presenter can put theirs in the viewer link (**Put the TURN servers in the viewer link** in **Settings**, off by default), and a viewer can add their own under **Network settings** on the join form.
+- When a connection fails, the console log says which candidates each side found and the likely cause (for example STUN blocked by a VPN or firewall), and which STUN/TURN servers could not be reached.
 - Support sessions: **Start a support session** on the presenter page helps one person with their computer. They open the link, install the new desktop app **inksplat Support** (Windows, macOS, Linux) once, and allow it; their whole screen is shared, and the helper's cursor, laser, pings and emotes appear on their own screen. The helper can only look and point. Both sides show a safety code to compare; sharing stops on **Stop**, a screen lock, sleep or an hour without confirmation. The video runs at 15 to 30 frames per second (**Settings > Support**).
 - `support.html`, the landing page of a support link: it opens the app or offers its installer.
 

@@ -357,6 +357,9 @@ const FRAGMENT_KEY = 'inksplat';
 const TRACKER_KEY = 'tr';
 const TOKEN = /^[A-Za-z0-9_-]{22}$/;
 const MAX_TRACKERS = 10;
+const ICE_KEY = 'ice';
+const TURN_URL = /^turns?:[^\s]+$/;
+const MAX_TURN = 4;
 
 /** What an invite link carries. */
 export interface Invite {
@@ -364,17 +367,33 @@ export interface Invite {
   token: string;
   /** Trackers to use when they differ from the defaults (a viewer cannot guess them). */
   trackers?: string[];
+  /** TURN servers the presenter shares with viewers (with their credentials). */
+  iceServers?: RTCIceServer[];
+}
+
+/** The TURN entries of a server list, one per URL, as `url[ username credential]` (link form). */
+function turnLines(servers: readonly RTCIceServer[]): string[] {
+  return servers.flatMap((s) =>
+    (Array.isArray(s.urls) ? s.urls : [s.urls])
+      .filter((url) => TURN_URL.test(url))
+      .map((url) =>
+        [url, s.username, typeof s.credential === 'string' ? s.credential : undefined]
+          .filter((part) => part !== undefined && part !== '')
+          .join(' '),
+      ),
+  );
 }
 
 /**
- * `<base>#inksplat=<token>[&tr=<tracker>...]`; `fragment` is
+ * `<base>#inksplat=<token>[&tr=<tracker>...][&ice=<turn server>...]`; `fragment` is
  * `Session.inviteFragment()`. Trackers are added only when they are not the
- * defaults.
+ * defaults; of `iceServers` only the TURN servers are added (STUN is the viewer's own),
+ * credentials included, so whoever has the link can use them.
  */
 export function inviteLink(
   base: string,
   fragment: string,
-  extra: { trackers?: readonly string[] } = {},
+  extra: { trackers?: readonly string[]; iceServers?: readonly RTCIceServer[] } = {},
 ): string {
   const url = new URL(base);
   const params = new URLSearchParams(fragment);
@@ -386,6 +405,9 @@ export function inviteLink(
     for (const tracker of extra.trackers!.slice(0, MAX_TRACKERS)) {
       params.append(TRACKER_KEY, tracker);
     }
+  }
+  for (const line of turnLines(extra.iceServers ?? []).slice(0, MAX_TURN)) {
+    params.append(ICE_KEY, line);
   }
   url.hash = params.toString();
   return url.toString();
@@ -405,6 +427,19 @@ export function parseInvite(hash: string): Invite | null {
     .slice(0, MAX_TRACKERS);
   if (trackers.length > 0) {
     invite.trackers = trackers;
+  }
+  const iceServers = params
+    .getAll(ICE_KEY)
+    .map((line) => line.trim().split(/\s+/))
+    .filter(([url]) => url !== undefined && TURN_URL.test(url))
+    .slice(0, MAX_TURN)
+    .map(([url, username, credential]) => ({
+      urls: url!,
+      ...(username ? { username } : {}),
+      ...(credential ? { credential } : {}),
+    }));
+  if (iceServers.length > 0) {
+    invite.iceServers = iceServers;
   }
   return invite;
 }

@@ -817,8 +817,17 @@
             <label for="iceServers">STUN / TURN servers (one per line)</label>
             <textarea id="iceServers" rows="3" spellcheck="false"></textarea>
             <p class="hint">
-              <code>stun:host:port</code> or <code>turn:host:port username credential</code>.
-              Applies from the next session.
+              <code>stun:host:port</code> or <code>turn:host:port username credential</code>. Behind
+              a VPN or a firewall, a TURN server on TCP/TLS port 443 often works, e.g.
+              <code>turns:turn.example.com:443?transport=tcp user pass</code>. Applies from the next
+              session.
+            </p>
+            <label class="check">
+              <input id="shareTurn" type="checkbox" /> Put the TURN servers in the viewer link
+            </label>
+            <p class="hint">
+              Viewers on restrictive networks can then connect through them too. Anybody with the
+              link can read the TURN credentials. Applies from the next session.
             </p>
           </div>
         </div>

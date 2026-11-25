@@ -34,7 +34,13 @@ Out of scope: hosting any dynamic service; presenter functions.
   they can be remade when the board changes; it is copied next to both home
   pages like the policy. **Invalid/expired token**: clear message.
 - **Join flow**: name field (prefilled from `localStorage`) and colour; "Join"
-  creates a guest `Session` with the default trackers/ICE servers. Statuses
+  creates a guest `Session` with the link's trackers (else the defaults) and, as ICE servers,
+  the default STUN servers, the TURN servers the link carries (`&ice=<url> <user> <credential>`,
+  at most four, only when the presenter turns on **Put the TURN servers in the viewer link**,
+  off by default since anyone with the link reads the credentials) and the viewer's own
+  (**Network settings** on the join form, kept in `localStorage`); `viewerIceServers` in
+  `viewer/src/settings.ts`. A viewer behind a VPN or firewall that blocks UDP needs TURN on its
+  own side, not only the presenter's. Statuses
   (`connecting`, `no-tracker`, `no-answer`, `ice-failed`, `reconnecting`,
   `host-gone`, `locked`, `removed`, `ended`) map to friendly messages; the
   manual-code fallback is offered when trackers fail.

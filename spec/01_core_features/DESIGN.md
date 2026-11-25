@@ -449,4 +449,8 @@ CMakeLists.txt         top-level entry: target `check` calls npm; ctest runs Vit
    section 3; gated by plan step 1 of that project.
 2. Public trackers may disappear or rate-limit; mitigated by several trackers
    plus manual codes (carried over from nymph).
-3. Viewers behind symmetric NAT need TURN; v1 ships STUN only, TURN optional.
+3. Viewers behind symmetric NAT need TURN; v1 ships STUN only, TURN optional (the presenter's
+   settings; viewers get it from the link or their join form, `spec/04_viewer_site/DESIGN.md`
+   section 2). When ICE fails before a link opens, the log has one `ICE failed:` line with the
+   candidate counts of both sides (from the SDPs, no addresses) and the likely cause, and an
+   `ICE server error:` line per STUN/TURN server that failed (`describeIceFailure`).

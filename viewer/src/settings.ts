@@ -19,6 +19,11 @@ export interface Settings {
   viewerBase: string;
   trackers: string[];
   iceServers: RTCIceServer[];
+  /**
+   * Whether the viewer link carries the TURN servers of `iceServers`, credentials included, so
+   * that viewers on restrictive networks (a VPN, a firewall) can use them too.
+   */
+  shareTurn: boolean;
   video: VideoSettings;
   /** The video of a support session: one viewer, so a higher frame rate (spec/08 section 4.3). */
   supportVideo: VideoSettings;
@@ -41,6 +46,7 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   viewerBase: DEFAULT_VIEWER_BASE,
   trackers: [...DEFAULT_TRACKERS],
   iceServers: DEFAULT_ICE_SERVERS.map((s) => ({ ...s })),
+  shareTurn: false,
   video: { ...DEFAULT_VIDEO },
   supportVideo: { ...SUPPORT_VIDEO },
   viewersMayDraw: true,
@@ -150,6 +156,7 @@ export function cleanSettings(input: unknown): Settings {
     viewerBase: cleanViewerBase(o.viewerBase) ?? DEFAULT_SETTINGS.viewerBase,
     trackers: cleanTrackers(o.trackers) ?? [...DEFAULT_SETTINGS.trackers],
     iceServers: cleanIceServers(o.iceServers) ?? DEFAULT_SETTINGS.iceServers.map((s) => ({ ...s })),
+    shareTurn: typeof o.shareTurn === 'boolean' ? o.shareTurn : DEFAULT_SETTINGS.shareTurn,
     video: cleanVideoSettings(o.video),
     supportVideo: cleanSupportVideo(o.supportVideo),
     viewersMayDraw:
@@ -176,6 +183,26 @@ export function parseIceLines(text: string): RTCIceServer[] {
     }
   }
   return cleanIceServers(servers) ?? [];
+}
+
+/**
+ * The servers a viewer joins with: the default STUN servers, the TURN servers the invite link
+ * carries, then the viewer's own (join form), without repeats and at most ten.
+ */
+export function viewerIceServers(
+  fromLink: readonly RTCIceServer[] | undefined,
+  own: readonly RTCIceServer[],
+): RTCIceServer[] {
+  const out: RTCIceServer[] = [];
+  const seen = new Set<string>();
+  for (const server of [...DEFAULT_ICE_SERVERS, ...(fromLink ?? []), ...own]) {
+    const key = JSON.stringify([server.urls, server.username, server.credential]);
+    if (!seen.has(key)) {
+      seen.add(key);
+      out.push({ ...server });
+    }
+  }
+  return out.slice(0, MAX_LIST);
 }
 
 /** The inverse of {@link parseIceLines}. */

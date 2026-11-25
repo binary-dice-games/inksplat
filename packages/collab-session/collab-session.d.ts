@@ -274,6 +274,27 @@ export class FrameRouter<F extends RoutedFrame = RoutedFrame> {
 /** The SHA-256 fingerprint an SDP gives (`AB:CD:...`, upper case), or null. */
 export function sdpFingerprint(sdp: string | undefined): string | null;
 
+/** Candidates of each type in an SDP; `mdns` counts the `host` ones behind a `.local` name. */
+export interface IceCandidateTypes {
+  host: number;
+  mdns: number;
+  srflx: number;
+  prflx: number;
+  relay: number;
+}
+
+/** How many candidates of each type an SDP offers (`a=candidate:` lines). */
+export function iceCandidateTypes(sdp: string | undefined): IceCandidateTypes;
+
+/**
+ * One log line on why ICE failed: the candidate counts of both sides and the likely cause.
+ * Carries no addresses.
+ */
+export function describeIceFailure(
+  localSdp: string | undefined,
+  remoteSdp: string | undefined,
+): string;
+
 /** The video codecs (lower-case MIME types) an SDP lists for media section `mid`, in order. */
 export function sdpCodecs(sdp: string | undefined, mid: string | null): string[];
 

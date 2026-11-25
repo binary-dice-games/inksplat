@@ -210,6 +210,45 @@ describe('invite links with trackers', () => {
   });
 });
 
+describe('invite links with TURN servers', () => {
+  const token = 'abcdefghijklmnopqrstuv';
+
+  it('carries only the TURN servers, with their credentials', () => {
+    const link = inviteLink(DEFAULT_VIEWER_BASE, `inksplat=${token}`, {
+      iceServers: [
+        { urls: 'stun:stun.example:3478' },
+        {
+          urls: ['turns:turn.example:443?transport=tcp', 'turn:turn.example:3478'],
+          username: 'ana',
+          credential: 's3cret',
+        },
+      ],
+    });
+    expect(parseInvite(new URL(link).hash)?.iceServers).toEqual([
+      { urls: 'turns:turn.example:443?transport=tcp', username: 'ana', credential: 's3cret' },
+      { urls: 'turn:turn.example:3478', username: 'ana', credential: 's3cret' },
+    ]);
+  });
+
+  it('has no ICE key without TURN servers', () => {
+    const link = inviteLink(DEFAULT_VIEWER_BASE, `inksplat=${token}`, {
+      iceServers: [{ urls: 'stun:stun.example:3478' }],
+    });
+    expect(parseInvite(new URL(link).hash)).toEqual({ token });
+  });
+
+  it('ignores ICE entries of a link that are not TURN, and keeps at most four', () => {
+    const turn = (n: number): string => `ice=${encodeURIComponent(`turn:t${n}.example:3478`)}`;
+    const hash = `#inksplat=${token}&ice=stun%3Ax.example&ice=https%3A%2F%2Fx&${[1, 2, 3, 4, 5].map(turn).join('&')}`;
+    expect(parseInvite(hash)?.iceServers?.map((s) => s.urls)).toEqual([
+      'turn:t1.example:3478',
+      'turn:t2.example:3478',
+      'turn:t3.example:3478',
+      'turn:t4.example:3478',
+    ]);
+  });
+});
+
 describe('default trackers', () => {
   it('are the three that nymph uses, all secure websockets', () => {
     expect(DEFAULT_TRACKERS).toEqual([

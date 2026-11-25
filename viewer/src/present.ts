@@ -486,6 +486,7 @@ function fillSettings(p: PresenterPrefs): void {
   input('trackerTtl').value = String(s.trackerTtlMinutes);
   $<HTMLTextAreaElement>('trackers').value = s.trackers.join('\n');
   $<HTMLTextAreaElement>('iceServers').value = formatIceLines(s.iceServers);
+  input('shareTurn').checked = s.shareTurn;
   showUplink();
 }
 
@@ -514,6 +515,7 @@ function readSettings(): PresenterPrefs {
       },
       trackers: cleanTrackers($<HTMLTextAreaElement>('trackers').value) ?? [],
       iceServers: parseIceLines($<HTMLTextAreaElement>('iceServers').value),
+      shareTurn: input('shareTurn').checked,
     },
   });
 }

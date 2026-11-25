@@ -509,14 +509,19 @@ export class ShareHost {
     }
   }
 
-  private trackerList(): { trackers: readonly string[] } {
-    return { trackers: this.settings.trackers };
+  /** What the link carries besides the token: the trackers and, if shared, the TURN servers. */
+  private linkExtra(): { trackers: readonly string[]; iceServers?: readonly RTCIceServer[] } {
+    const share = this.settings.shareTurn && this.mode !== 'support';
+    return {
+      trackers: this.settings.trackers,
+      ...(share ? { iceServers: this.settings.iceServers } : {}),
+    };
   }
 
   /** The link to give viewers; in a support session, the support link that opens the app. */
   link(): string {
     const make = this.mode === 'support' ? supportLink : inviteLink;
-    return make(this.settings.viewerBase, this.session.inviteFragment(), this.trackerList());
+    return make(this.settings.viewerBase, this.session.inviteFragment(), this.linkExtra());
   }
 
   /** What a support session's page shows; null in an ordinary session. */

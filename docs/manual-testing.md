@@ -17,6 +17,7 @@ presenter on Chrome.
 | 2 | Public trackers: block all but one in settings, retry | Still joins |
 | 3 | Block all trackers (offline DNS) | Viewer shows `no-tracker` after ~30 s; manual codes join |
 | 4 | Viewer on a phone hotspot (symmetric NAT likely) | Joins, or reports `ice-failed`; with TURN configured it joins and `path` is `relay` |
+| 4a | Viewer on a VPN that blocks UDP; TURN on TCP/TLS 443 in the presenter's settings with **Put the TURN servers in the viewer link**, or in the viewer's **Network settings** | Without TURN the console shows `ICE failed: ... STUN is blocked here`; with it the viewer joins and `path` is `relay` |
 | 5 | Viewer behind a corporate proxy blocking `wss` | Reports `no-tracker`; manual codes work |
 | 6 | Viewer on Firefox, Safari (macOS and iOS), Chrome Android | Video plays, drawing works |
 | 7 | 10 viewers at the default 3 fps / 600 kbps | No link drops in 5 minutes; presenter uplink about 6 Mbps |

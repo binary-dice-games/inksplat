@@ -704,6 +704,16 @@
         <label class="check">
           <input id="toolHints" type="checkbox" /> Show a hint on how to use each tool
         </label>
+        <details id="network">
+          <summary>Network settings</summary>
+          <label for="viewerIce">Extra STUN / TURN servers (one per line)</label>
+          <textarea id="viewerIce" rows="2" spellcheck="false"></textarea>
+          <p class="muted">
+            Only needed when a VPN or a firewall stops the connection ("could not connect
+            directly"): <code>turns:host:443?transport=tcp username credential</code>. Kept in this
+            browser.
+          </p>
+        </details>
         <p><button class="primary" type="submit">Join</button></p>
         <p class="muted">
           The presenter will see your connection address. Nothing you do here is stored on a server.

@@ -17,6 +17,8 @@
  * `certificates` option (one DTLS certificate for every link), `fingerprints(peerId)`, and
  * `degradationPreference` in the host's `up` message. The downlink's limits are applied again
  * once answered (Safari refuses them before).
+ * Diagnostics of a failed connection: the ICE servers' errors and a summary of the candidates of
+ * both sides (`iceCandidateTypes`, `describeIceFailure`).
  * It imports nothing.
  *
  *   import { createSession } from './collab-session.js';
@@ -390,9 +392,21 @@ class WebRtcLink extends LinkBase {
       ch.onclose = () => this.ended('closed');
       ch.onmessage = (e) => typeof e.data !== 'string' && this.onframe(new Uint8Array(e.data), ch === this.fast);
     }
+    /** STUN/TURN servers that failed, once each: why a network gives no candidates. (inksplat) */
+    this.iceErrors = new Set();
+    pc.addEventListener('icecandidateerror', (e) => {
+      const what = `${e.url || '?'} (${e.errorCode}${e.errorText ? ` ${e.errorText}` : ''})`;
+      if (!this.iceErrors.has(what) && this.iceErrors.size < 8) {
+        this.iceErrors.add(what);
+        dbg('ICE server error:', what);
+      }
+    });
     pc.addEventListener('connectionstatechange', () => {
       dbg('peer connection:', pc.connectionState);
       if (pc.connectionState === 'failed') {
+        if (!this.isOpen) {
+          dbg('ICE failed:', describeIceFailure(pc.localDescription?.sdp, pc.remoteDescription?.sdp));
+        }
         this.ended(this.isOpen ? 'network' : 'ice-failed');
         pc.close();
       } else if (pc.connectionState === 'closed') {
@@ -460,6 +474,46 @@ class WebRtcLink extends LinkBase {
       return { path: null };
     }
   }
+}
+
+/**
+ * How many candidates of each type an SDP offers: `host` (`mdns`: of them, hidden behind a
+ * `.local` name), `srflx` (the public address STUN found), `prflx` and `relay` (TURN). (inksplat)
+ */
+export function iceCandidateTypes(sdp) {
+  const counts = { host: 0, mdns: 0, srflx: 0, prflx: 0, relay: 0 };
+  for (const m of (typeof sdp === 'string' ? sdp : '').matchAll(/^a=candidate:\S+ \d+ \S+ \d+ (\S+) \d+ typ (\w+)/gm)) {
+    if (m[2] in counts) {
+      counts[m[2]] += 1;
+      if (m[2] === 'host' && m[1].endsWith('.local')) {
+        counts.mdns += 1;
+      }
+    }
+  }
+  return counts;
+}
+
+/**
+ * One line on why ICE failed, from the two SDPs: the candidates of each side and the likely
+ * cause. Only counts, no addresses. (inksplat)
+ */
+export function describeIceFailure(localSdp, remoteSdp) {
+  const local = iceCandidateTypes(localSdp);
+  const remote = iceCandidateTypes(remoteSdp);
+  const list = (c) => `host ${c.host}${c.mdns ? ` (${c.mdns} mDNS)` : ''}, srflx ${c.srflx}, relay ${c.relay}`;
+  let cause;
+  if (local.host + local.srflx + local.relay === 0) {
+    cause = 'this browser offered no candidates at all: a browser policy (WebRtcIPHandling) or the network blocks WebRTC here; a TURN server on TCP/TLS port 443 may help';
+  } else if (local.srflx === 0 && local.relay === 0) {
+    cause = 'this browser got no public address: STUN is blocked here (UDP, or ports 3478 and 19302), for example by a VPN, a firewall or a browser policy; a TURN server on TCP/TLS port 443 may help';
+  } else if (remote.srflx === 0 && remote.relay === 0) {
+    cause = 'the other side got no public address: STUN is blocked on its network; a TURN server on TCP/TLS port 443 there may help';
+  } else if (local.relay === 0 && remote.relay === 0) {
+    cause = 'both sides have public addresses but no path between them worked (a strict NAT or a firewall); a TURN server may help';
+  } else {
+    cause = 'not even the TURN relay worked: check the TURN server, its credentials, and that this network reaches it';
+  }
+  return `local candidates: ${list(local)}; remote candidates: ${list(remote)}; ${cause}`;
 }
 
 /** Waits for ICE gathering, at most `ms` (DESIGN.md section 4: untrickled offers). */

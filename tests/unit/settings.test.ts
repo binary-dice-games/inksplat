@@ -8,7 +8,9 @@ import {
   cleanViewerBase,
   formatIceLines,
   parseIceLines,
+  viewerIceServers,
 } from '../../viewer/src/settings';
+import { DEFAULT_ICE_SERVERS } from '@inksplat/defaults';
 
 describe('settings', () => {
   it('gives the defaults for nothing or garbage', () => {
@@ -81,6 +83,23 @@ describe('settings', () => {
       { urls: 'stun:stun.example:3478' },
       { urls: 'turn:t.example', username: 'u', credential: 'c' },
     ]);
+  });
+
+  it('does not put TURN servers in the link unless asked', () => {
+    expect(DEFAULT_SETTINGS.shareTurn).toBe(false);
+    expect(cleanSettings({ shareTurn: true }).shareTurn).toBe(true);
+    expect(cleanSettings({ shareTurn: 'yes' }).shareTurn).toBe(false);
+  });
+
+  it('joins a viewer with the default STUN, the link TURN and its own servers, once each', () => {
+    const turn = { urls: 'turns:turn.example:443?transport=tcp', username: 'a', credential: 'b' };
+    const own = parseIceLines('turn:mine.example:3478 me pw\nstun:stun.l.google.com:19302');
+    expect(viewerIceServers([turn], own)).toEqual([
+      ...DEFAULT_ICE_SERVERS,
+      turn,
+      { urls: 'turn:mine.example:3478', username: 'me', credential: 'pw' },
+    ]);
+    expect(viewerIceServers(undefined, [])).toEqual([...DEFAULT_ICE_SERVERS]);
   });
 
   it('defaults the tracker lifetime to an hour and keeps it within bounds', () => {

@@ -1,4 +1,5 @@
 inksplat_add_test(session tests/unit/session.test.ts)
+inksplat_add_test(ice_diagnostics tests/unit/ice-diagnostics.test.ts)
 inksplat_add_test(whiteboard_model tests/unit/whiteboard-model.test.ts)
 inksplat_add_test(whiteboard_dom tests/unit/whiteboard-dom.test.ts)
 inksplat_add_test(whiteboard_interaction tests/unit/whiteboard-interaction.test.ts)

@@ -18,7 +18,6 @@ import {
 import type { FrameAdapter, Whiteboard } from '@inksplat/collab-whiteboard';
 import {
   CODEC_PREFERENCE,
-  DEFAULT_ICE_SERVERS,
   DEFAULT_TRACKERS,
   PROTOCOL,
   SCREEN_CHANNEL,
@@ -28,6 +27,7 @@ import {
 } from '@inksplat/defaults';
 import type { Stage } from '@inksplat/defaults';
 import { setToolbarFolded } from './fold';
+import { formatIceLines, parseIceLines, viewerIceServers } from './settings';
 import { filePreview } from './previews';
 import { showSheet } from './sheet';
 import { wireSave } from './save';
@@ -87,6 +87,8 @@ let folded = store('inksplat.toolsFolded') === '1';
 /** A hint on how to use each tool shows for a moment when it is picked (remembered). */
 let toolHints = store('inksplat.toolHints') !== '0';
 let toastTimer: ReturnType<typeof setTimeout> | undefined;
+/** STUN/TURN servers typed on the join form, besides the defaults and the link's. */
+let ownIceServers: RTCIceServer[] = [];
 /** The picture chosen on the join form (an image data URL), or ''. */
 let avatar = cleanImageData(store('inksplat.avatar'), LIMITS.avatarChars) ?? '';
 
@@ -232,7 +234,7 @@ async function join(name: string, color: string): Promise<void> {
       videoCodecs: [...CODEC_PREFERENCE],
       log: logger,
       me: { name, color },
-      iceServers: [...DEFAULT_ICE_SERVERS],
+      iceServers: viewerIceServers(invite.iceServers, ownIceServers),
       rendezvous: [
         { kind: 'torrent', urls: invite.trackers ?? [...DEFAULT_TRACKERS] },
         { kind: 'manual' },
@@ -440,8 +442,13 @@ async function main(): Promise<void> {
   });
   $('avatarPick').addEventListener('click', () => $<HTMLInputElement>('avatar').click());
   $('avatarClear').addEventListener('click', () => showAvatar(''));
+  const iceInput = $<HTMLTextAreaElement>('viewerIce');
+  iceInput.value = formatIceLines(parseIceLines(store('inksplat.iceServers') ?? ''));
+  $<HTMLDetailsElement>('network').open = iceInput.value !== '';
   $('joinForm').addEventListener('submit', (e) => {
     e.preventDefault();
+    ownIceServers = parseIceLines(iceInput.value);
+    store('inksplat.iceServers', formatIceLines(ownIceServers));
     const name = nameInput.value.trim() || 'Guest';
     store('inksplat.name', name);
     store('inksplat.color', colorInput.value);
